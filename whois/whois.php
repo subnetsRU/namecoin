@@ -7,7 +7,7 @@
     Authors: Panfilov Alexey <lehis@subnets.ru>, Nikolaev Dmitry <virus@subnets.ru> 
 */
 
-define( 'whoisVersion', '0.1.0' );
+define( 'whoisVersion', '0.1.1' );
 
 init();
 
@@ -127,6 +127,9 @@ function init(){
 
     if ( !function_exists('curl_exec') ){
 	$errors[]="CURL not found... Visit http://www.php.net/manual/ru/book.curl.php";
+    }
+    if ( !function_exists('mb_internal_encoding') ){
+	$errors[]="mbstring not found... Install php mbstring";
     }
 
     if (count($errors)>0){
