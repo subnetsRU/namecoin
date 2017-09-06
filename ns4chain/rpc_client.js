@@ -97,9 +97,11 @@ rpc.findMap = function( key, obj, nn ){
 }
 
 rpc.resolv = function( host, domain ){
+    //https://wiki.namecoin.org/index.php?title=Domain_Name_Specification
+    //https://github.com/namecoin/proposals/blob/master/ifa-0001.md
     sys.console({level: 'debug', text: 'Doing resolv '+host+' in '+domain});
     var ret = { ip: null, ip6: null };
-    if (sys.is_null(zoneData[host])){
+    if (sys.is_null(zoneData[host]) && host != '*.'+domain){
 	sys.console({level: 'debug', text: 'Host '+host+' not found, trying *.'+domain});
 	host = '*.'+domain;
 	if (!sys.is_null(zoneData['*.'+domain])){
@@ -115,18 +117,25 @@ rpc.resolv = function( host, domain ){
 	    ret.ip6 = zoneData[host].ip6;
 	}
 
+
 	if (sys.is_null(ret.ip)){
 	    if (zoneData[host].alias !== undefined){
-		if (zoneData[host].alias == ''){
+		var alias = zoneData[host].alias;
+		if (alias == ''){
 		    var prevLevel = host.split('.');
 		    prevLevel.shift();
 		    sys.console({level: 'debug', text: 'Found alias to '+prevLevel.join('.')});
 		    ret = rpc.resolv( prevLevel.join('.'), domain);
 		}else{
-		    var matches = zoneData[host].alias.match(/(.*)\.\@/);
+		    var matches = alias.match(/(.*)\.\@/);
 		    if (!sys.is_null(matches)){
-			sys.console({level: 'debug', text: 'Found alias '+zoneData[host].alias});
+			sys.console({level: 'debug', text: 'Found alias '+alias});
 			ret = rpc.resolv( matches[1]+'.'+domain, domain);
+		    }else{
+			if (!sys.is_null(zoneData[alias+'.'+domain])){
+			    sys.console({level: 'debug', text: 'Found alias '+alias+'.'+domain});
+			    ret = rpc.resolv( alias+'.'+domain, domain);
+			}
 		    }
 		}
 	    }

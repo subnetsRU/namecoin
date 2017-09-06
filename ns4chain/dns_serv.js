@@ -33,7 +33,7 @@ sprintf = require("sprintf-js").sprintf;        //https://www.npmjs.com/package/
 dnsSource = require('native-dns');		//https://github.com/tjfontaine/node-dns
 
 config = require('./dns_serv_options');
-config.version = '0.4.3';
+config.version = '0.4.4';
 sys = require('./dns_func');
 rpc = require('./rpc_client');
 
@@ -139,20 +139,30 @@ dns.on('request', function (request, response) {
 			if ((/^(A|AAAA|ANY)$/.test(res.type))){
 			    if (!sys.is_null(res.ip) || !sys.is_null(res.ip6)){
 				if (!sys.is_null(res.ip) && (/^(A|ANY)$/.test(res.type))){
-				    res.response.answer.push(dnsSource.A({
-					type: res.type,
-					name: res.domain,
-					address: res.ip,
-					ttl: config.ttl,
-				    }));
+				    if (typeof res.ip === 'string'){
+					res.ip = [res.ip];
+				    }
+				    for (var index in res.ip){
+					res.response.answer.push(dnsSource.A({
+					    type: res.type,
+					    name: res.domain,
+					    address: res.ip[index],
+					    ttl: config.ttl,
+					}));
+				    }
 				}
 				if (!sys.is_null(res.ip6) && (/^(AAAA|ANY)$/.test(res.type))){
-				    res.response.answer.push(dnsSource.AAAA({
-					type: res.type,
-					name: res.domain,
-					address: res.ip6,
-					ttl: config.ttl,
-				    }));
+				    if (typeof res.ip6 === 'string'){
+					res.ip6 = [res.ip6];
+				    }
+				    for (var index in res.ip6){
+					res.response.answer.push(dnsSource.AAAA({
+					    type: res.type,
+					    name: res.domain,
+					    address: res.ip6[index],
+					    ttl: config.ttl,
+					}));
+				    }
 				}
 			    }else{
 				sys.console({level: 'warn', text: 'domain "'+res.domain+'" has no IP' });
