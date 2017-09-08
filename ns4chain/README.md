@@ -1,6 +1,6 @@
 DNS server on NodeJS for .bit domains
 
-# node ./dns_serv.js -h
+node ./dns_serv.js -h
 Usage: node /usr/local/www/dnschain/server/_devel/dns_serv.js [options]
 Options:
     -h, --help                   This help;

@@ -33,9 +33,12 @@ sprintf = require("sprintf-js").sprintf;        //https://www.npmjs.com/package/
 dnsSource = require('native-dns');		//https://github.com/tjfontaine/node-dns
 
 config = require('./dns_serv_options');
-config.version = '0.4.4';
+config.version = '0.5.0';
 sys = require('./dns_func');
 rpc = require('./rpc_client');
+
+ns4chain = require('./ns4chain');
+zoneData = {};
 
 var argv = process.argv.slice(2);
 while (argv[0] && argv[0][0] == '-') {
@@ -53,7 +56,7 @@ while (argv[0] && argv[0][0] == '-') {
 	case '-h':
 	case '--help':
 	    argv = argv.shift();
-	    dns_serv_help();
+	    ns4chain.dns_serv_help();
 	    break;
 	default:
 	    sys.console({level: 'error', text: sprintf('unknown option [%s], for help run:\n\tnode %s -h',argv[0],process.mainModule.filename)});
@@ -79,30 +82,31 @@ dns.on('request', function (request, response) {
 	}else if (!(/^(A|AAAA|TXT|ANY)$/.test(type))){
 	    error = 'NOTIMP';
 	}
+
+	var tmpName = domain.split('.');
+	var name = tmpName[0];
+	var zone = tmpName[tmpName.length-1];
+	var subDomain = null;
+	if (tmpName.length > 2){
+	    name = tmpName[tmpName.length-2];
+	    re = new RegExp('(.*)\.' + name + '\.' + tmpName[tmpName.length-1] + '$');
+	    subMatch = domain.match(re);
+	    if (!sys.is_null(subMatch[1])){
+		subDomain = subMatch[1];
+	    }
+	}
 	
-//TODO: CHECK DOMAIN NAME WITH REGEXP
 	//https://wiki.namecoin.info/index.php?title=Domain_Name_Specification#Regular_Expression
-	//VALID_NMC_DOMAINS = /^[a-z]([a-z0-9-]{0,62}[a-z0-9])?$/
+	if ((/\.bit/.test(domain)) && !(/^[a-z]([a-z0-9-]{0,62}[a-z0-9])?$/.test(name))){
+	    error = 'NOTFOUND';
+	}
 
 	if (!sys.is_null(error)){
 	    sys.console({level: 'info', text: sprintf('domain [%s] code %s',domain,error)});
 	    response.header.rcode = dnsSource.consts.NAME_TO_RCODE[error];
 	    response.send();
 	}else{
-	    var tmpName = domain.split('.');
-	    var name = tmpName[0];
-	    var zone = tmpName[tmpName.length-1];
-	    var subDomain = null;
-	    if (tmpName.length > 2){
-		name = tmpName[tmpName.length-2];
-		re = new RegExp('(.*)\.' + name + '\.' + tmpName[tmpName.length-1] + '$');
-		subMatch = domain.match(re);
-		if (!sys.is_null(subMatch[1])){
-		    subDomain = subMatch[1];
-		}
-	    }
 	    sys.console({level: 'debug', text: sprintf("Domain [%s] subdomain [%s]",name,subDomain)});
-
 //TODO: Handle error => ipaddr: the address has neither IPv6 nor IPv4 format
 //when reply for request return not an IP-address
 
@@ -114,8 +118,21 @@ dns.on('request', function (request, response) {
 		zone: zone,
 		subDomain: subDomain,
 		callback: function( res ){
+		    zoneData = {};
 		    if (sys.is_null(res.error)){
-			sys.console({level: 'info', text: sprintf('form reply for [%s] [%s] [%s]',res.domain,res.type, (res.type == 'AAAA' ? res.ip6 : res.ip))});
+			ns4chain.rpcData( { res: res, callback: this.ns4chainResponse } );
+		    }else{
+			sys.console({level: 'error', text: res.error });
+			if (sys.is_null(res.errorCode)){
+			    res.response.header.rcode = dnsSource.consts.NAME_TO_RCODE.SERVFAIL;
+			}else{
+			    res.response.header.rcode = dnsSource.consts.NAME_TO_RCODE[res.errorCode];
+			}
+			res.response.send();
+		    }
+		},
+		ns4chainResponse: function( res ){
+			sys.console({level: 'info', text: sprintf('form reply for [%s] %j',res.domain,res.ns4chain)});
 			if ((/^(TXT|ANY)$/.test(res.type))){
 			    res.response.answer.push(dnsSource.TXT({
 				type: res.type,
@@ -136,32 +153,15 @@ dns.on('request', function (request, response) {
 				ttl: config.ttl,
 			    }));
 			}
+
 			if ((/^(A|AAAA|ANY)$/.test(res.type))){
-			    if (!sys.is_null(res.ip) || !sys.is_null(res.ip6)){
-				if (!sys.is_null(res.ip) && (/^(A|ANY)$/.test(res.type))){
-				    if (typeof res.ip === 'string'){
-					res.ip = [res.ip];
-				    }
-				    for (var index in res.ip){
-					res.response.answer.push(dnsSource.A({
-					    type: res.type,
-					    name: res.domain,
-					    address: res.ip[index],
-					    ttl: config.ttl,
-					}));
-				    }
-				}
-				if (!sys.is_null(res.ip6) && (/^(AAAA|ANY)$/.test(res.type))){
-				    if (typeof res.ip6 === 'string'){
-					res.ip6 = [res.ip6];
-				    }
-				    for (var index in res.ip6){
-					res.response.answer.push(dnsSource.AAAA({
-					    type: res.type,
-					    name: res.domain,
-					    address: res.ip6[index],
-					    ttl: config.ttl,
-					}));
+			    if (!sys.is_null(res.ns4chain) && typeof res.ns4chain == 'object'){
+				for (var index in res.ns4chain){
+				    var tmp = res.ns4chain[index];
+				    if (!sys.is_null(tmp.type)){
+					res.response.answer.push(
+					    dnsSource[dnsSource.consts.QTYPE_TO_NAME[tmp.type]](tmp)
+					);
 				    }
 				}
 			    }else{
@@ -169,16 +169,13 @@ dns.on('request', function (request, response) {
 				res.response.header.rcode = dnsSource.consts.NAME_TO_RCODE.NOTFOUND;
 			    }
 			}
+			
+			try {
 			res.response.send();
-		    }else{
-			sys.console({level: 'error', text: res.error });
-			if (sys.is_null(res.errorCode)){
-			    res.response.header.rcode = dnsSource.consts.NAME_TO_RCODE.SERVFAIL;
-			}else{
-			    res.response.header.rcode = dnsSource.consts.NAME_TO_RCODE[res.errorCode];
 			}
-			res.response.send();
-		    }
+			catch(e){
+			    console.log('Catch',e);
+			}
 		}
 	    };
 	    rpc.lookup( request );
@@ -202,22 +199,5 @@ dns.on('socketError', function (err) {
 });
 dns.serve(config.port,config.listen);
 
-process.on('SIGINT', onExit);
-process.on('SIGTERM', onExit);
-
-function dns_serv_help(){
-    var helpText = '\n';
-    helpText += 'Usage: node '+process.mainModule.filename+' [options]\n';
-    helpText += 'Options:\n';
-    helpText +='\t-h, --help                   This help;\n';
-    helpText +='\t-l, --listen <IP>            IP to listen on;\n';
-    helpText += '\t-p, --port <PORT>            Port to listen to;\n'
-    sys.console({level: 'info', text: helpText});
-    process.exit();
-}
-
-function onExit() {
-    sys.console({level: 'info', text: 'Stoping DNS server'});
-    dns.close();
-    process.exit(0);
-}
+process.on('SIGINT', ns4chain.onExit);
+process.on('SIGTERM', ns4chain.onExit);
