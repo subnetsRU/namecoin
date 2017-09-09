@@ -33,14 +33,14 @@ sprintf = require("sprintf-js").sprintf;        //https://www.npmjs.com/package/
 dnsSource = require('native-dns');		//https://github.com/tjfontaine/node-dns
 
 config = require('./dns_serv_options');
-config.version = '0.5.1';
+config.version = '0.5.2';
 sys = require('./dns_func');
 rpc = require('./rpc_client');
-
 ns4chain = require('./ns4chain');
-zoneData = {};
 
+zoneData = {};
 var argv = process.argv.slice(2);
+
 while (argv[0] && argv[0][0] == '-') {
     switch (argv[0]) {
 	case '-p':

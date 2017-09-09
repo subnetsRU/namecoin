@@ -29,7 +29,7 @@
  SUCH DAMAGE.
 */
 
-define( 'whoisVersion', '0.1.2' );
+define( 'whoisVersion', '0.1.3' );
 
 init();
 
@@ -281,7 +281,7 @@ function rpc_request( $p = array() ){
 }
 
 function print_info( $value, $sub='' ){
-    $value = trim( $value );
+    $value = is_string($value) ? trim( $value ) : $value;
     if( ( $text =  @json_decode( $value, true, 512 ) ) === null ){
 	$text = $value;
     }
