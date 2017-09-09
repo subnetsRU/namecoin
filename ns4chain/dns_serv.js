@@ -33,7 +33,7 @@ sprintf = require("sprintf-js").sprintf;        //https://www.npmjs.com/package/
 dnsSource = require('native-dns');		//https://github.com/tjfontaine/node-dns
 
 config = require('./dns_serv_options');
-config.version = '0.5.0';
+config.version = '0.5.1';
 sys = require('./dns_func');
 rpc = require('./rpc_client');
 
@@ -51,6 +51,11 @@ while (argv[0] && argv[0][0] == '-') {
 	case '-l':
 	case '--listen':
 	    config.listen = argv[1];
+	    argv = argv.slice(2);
+	    break;
+	case '-t':
+	case '--ttl':
+	    config.ttl = argv[1];
 	    argv = argv.slice(2);
 	    break;
 	case '-h':
@@ -76,6 +81,7 @@ dns.on('request', function (request, response) {
 	var domain = request.question[0].name.toLowerCase();
 	var type = dnsSource.consts.QTYPE_TO_NAME[request.question[0].type];
 	sys.console({level: 'info', text: 'Got request from ['+request.address.address+':'+request.address.port+'] for ['+type+'] ['+domain+']'});
+
 	//for rcode see node_modules/native-dns-packet/consts.js -> NAME_TO_RCODE
 	if (!(/\.bit/.test(domain))){
 	    error = 'REFUSED';
@@ -107,9 +113,6 @@ dns.on('request', function (request, response) {
 	    response.send();
 	}else{
 	    sys.console({level: 'debug', text: sprintf("Domain [%s] subdomain [%s]",name,subDomain)});
-//TODO: Handle error => ipaddr: the address has neither IPv6 nor IPv4 format
-//when reply for request return not an IP-address
-
 	    var request = {
 		response: response,
 		domain: domain,
@@ -117,6 +120,7 @@ dns.on('request', function (request, response) {
 		name: name,
 		zone: zone,
 		subDomain: subDomain,
+		class: (!sys.is_null(request.question[0].class) ? request.question[0].class : 1),
 		callback: function( res ){
 		    zoneData = {};
 		    if (sys.is_null(res.error)){
@@ -132,29 +136,8 @@ dns.on('request', function (request, response) {
 		    }
 		},
 		ns4chainResponse: function( res ){
-			sys.console({level: 'info', text: sprintf('form reply for [%s] %j',res.domain,res.ns4chain)});
-			if ((/^(TXT|ANY)$/.test(res.type))){
-			    res.response.answer.push(dnsSource.TXT({
-				type: res.type,
-				name: res.domain,
-				data: 'txid: ' + res.data.txid,
-				ttl: config.ttl,
-			    }));
-			    res.response.answer.push(dnsSource.TXT({
-				type: res.type,
-				name: res.domain,
-				data: 'address: ' + res.data.address,
-				ttl: config.ttl,
-			    }));
-			    res.response.answer.push(dnsSource.TXT({
-				type: res.type,
-				name: res.domain,
-				data: 'expires: ' + res.data.expires_in,
-				ttl: config.ttl,
-			    }));
-			}
-
-			if ((/^(A|AAAA|ANY)$/.test(res.type))){
+			sys.console({level: 'info', text: sprintf('Form reply for [%s] %j',res.domain,res.ns4chain)});
+			if ((/^(A|AAAA|TXT|ANY)$/.test(res.type))){
 			    if (!sys.is_null(res.ns4chain) && typeof res.ns4chain == 'object'){
 				for (var index in res.ns4chain){
 				    var tmp = res.ns4chain[index];
@@ -164,38 +147,64 @@ dns.on('request', function (request, response) {
 					);
 				    }
 				}
-			    }else{
-				sys.console({level: 'warn', text: 'domain "'+res.domain+'" has no IP' });
-				res.response.header.rcode = dnsSource.consts.NAME_TO_RCODE.NOTFOUND;
+			    }
+
+			    if (sys.is_null(res.error)){
+				if (sys.is_null(res.ns4chain) || typeof res.ns4chain !== 'object' || res.response.answer.length == 0){
+				    if ((/^(A|AAAA)$/.test(res.type))){
+					res.error = 'domain "'+res.domain+'" has no IP';
+					res.errorCode = 'NOTFOUND';
+				    }else{
+					res.error = 'No data for the reply...';
+				    }
+				}
+			    }
+
+			    if (!sys.is_null(res.error)){
+				sys.console({level: 'error', text: res.error });
+				if (sys.is_null(res.errorCode)){
+				    res.response.header.rcode = dnsSource.consts.NAME_TO_RCODE.SERVFAIL;
+				}else{
+				    res.response.header.rcode = dnsSource.consts.NAME_TO_RCODE[res.errorCode];
+				}
 			    }
 			}
-			
+
 			try {
-			res.response.send();
+			    res.response.send();
 			}
 			catch(e){
-			    console.log('Catch',e);
+			    sys.console({level: 'error',text: 'Error on reply occurred => ', obj: e});
+			    res.response.answer = [];
+			    res.response.header.rcode = dnsSource.consts.NAME_TO_RCODE.SERVFAIL;
+			    try {
+				res.response.send();
+			    }
+			    catch(e){
+				sys.console({level: 'error',text: 'Send info about error failed => ', obj: e});
+			    }
 			}
 		}
 	    };
 	    rpc.lookup( request );
 	}
     }catch(e){
-	sys.console({level: 'error', text: 'DNS request failed', obj: request});
+	sys.console({level: 'error', text: 'DNS error on request occurred', obj: request});
 	console.log(e);
     }
 });
 
 dns.on('close', function(){
-    sys.console({level: 'info', text: sprintf('Stop DNS server on %j',dns.address())});
+    sys.console({level: 'info', text: sprintf('Close DNS server %j',dns.address())});
 });
 
 dns.on('error', function (err, buff, req, res) {
-  console.log('[ERROR]:',err.stack);
+  sys.console({level: 'error', text: 'DNS error occurred', obj: err.stack});
 });
 
 dns.on('socketError', function (err) {
   console.log('[ERROR] on socket:',err.stack);
+  sys.console({level: 'error', text: 'DNS socketError occurred', obj: err.stack});
 });
 dns.serve(config.port,config.listen);
 
