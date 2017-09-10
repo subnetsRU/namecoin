@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /*
-    RPC client for ns4chain :: https://github.com/subnetsRU/namecoin
+    ns4chain functions :: https://github.com/subnetsRU/namecoin
     
     (c) 2017 SUBNETS.RU for bitname.ru project (Moscow, Russia)
     Authors: Nikolaev Dmitry <virus@subnets.ru>, Panfilov Alexey <lehis@subnets.ru>
@@ -33,10 +33,12 @@ ns4chain.dns_serv_help = function(){
     var helpText = '\n';
     helpText += 'Usage: node '+process.mainModule.filename+' [options]\n';
     helpText += 'Options:\n';
-    helpText +='\t-h, --help                   This help;\n';
-    helpText +='\t-l, --listen <IP>            IP to listen on;\n';
-    helpText += '\t-p, --port <PORT>            Port to listen to;\n'
-    helpText += '\t-t, --ttl <NUMBER>           Set this TTL in reply;\n'
+    helpText +='\t-h, --help                              This help;\n';
+    helpText +='\t-d, --debug <none|log|cli|full>         Enable/disable debug and logging;\n';
+    helpText +='\t-l, --listen <IP>                       IP to listen on;\n';
+    helpText += '\t-p, --port <PORT>                       Port to listen to;\n'
+    helpText += '\t-t, --ttl <NUMBER>                      Set this TTL in reply;\n'
+    helpText += '\t-r, --recursion                         Enable recursive queries;\n'
     sys.console({level: 'info', text: helpText});
     process.exit(0);
 }
@@ -45,6 +47,146 @@ ns4chain.onExit = function() {
     sys.console({level: 'info', text: sprintf('Stop DNS server %j',dns.address())});
     dns.close();
     process.exit(0);
+}
+
+ns4chain.recursive = function( obj ){
+    try{
+	sys.console({level: 'debug', text: 'Perform recursive request'});
+	ns4chain.oldResolver({
+	    name: obj.domain,
+	    res: {
+		response: obj.response,
+		domain: obj.domain,
+		type: obj.type,
+		class: obj.class,
+		ns4chain: [],
+	    },
+	    callback: function( res ){
+		if (sys.is_null(res.error)){
+		    sys.console({level: 'info', text: sprintf('Form reply for [%s] %j',res.domain,res.ns4chain)});
+		    if (!sys.is_null(res.ns4chain) && typeof res.ns4chain == 'object'){
+			for (var index in res.ns4chain){
+			    var tmp = res.ns4chain[index];
+			    if (!sys.is_null(tmp.type)){
+				res.response.answer.push(
+				    dnsSource[dnsSource.consts.QTYPE_TO_NAME[tmp.type]](tmp)
+				);
+			    }
+			}
+		    }else{
+			res.error = 'ns4chain.recursive: Unknown data for the reply';
+		    }
+		}
+
+		if (!sys.is_null(res.error)){
+		    sys.console({level: 'error', text: res.error });
+		    res.response.answer = [];
+		    if (sys.is_null(res.errorCode)){
+			res.response.header.rcode = dnsSource.consts.NAME_TO_RCODE.SERVFAIL;
+		    }else{
+			res.response.header.rcode = dnsSource.consts.NAME_TO_RCODE[res.errorCode];
+		    }
+		}
+
+		try {
+		    res.response.send();
+		}
+		catch(e){
+		    sys.console({level: 'error',text: 'ns4chain.recursive: Error on reply occurred => ', obj: e});
+		}
+	    }
+	});
+    }
+    catch(e){
+	sys.console({level: 'error', text: 'ns4chain request failed', obj: obj});
+    }
+}
+
+ns4chain.request = function( obj ){
+    try{
+	    var request = {
+		response: obj.response,
+		domain: obj.domain,
+		type: obj.type,
+		name: obj.name,
+		zone: obj.zone,
+		subDomain: obj.subDomain,
+		class: obj.class,
+		callback: function( res ){
+		    zoneData = {};
+		    if (sys.is_null(res.error)){
+			ns4chain.rpcData( { res: res, callback: this.ns4chainResponse } );
+		    }else{
+			sys.console({level: 'error', text: res.error });
+			if (sys.is_null(res.errorCode)){
+			    res.response.header.rcode = dnsSource.consts.NAME_TO_RCODE.SERVFAIL;
+			}else{
+			    res.response.header.rcode = dnsSource.consts.NAME_TO_RCODE[res.errorCode];
+			}
+			try {
+			    res.response.send();
+			}
+			catch(e){
+			    sys.console({level: 'error',text: 'ns4chain.request: Error on reply occurred => ', obj: e});
+			}
+		    }
+		},
+		ns4chainResponse: function( res ){
+			sys.console({level: 'info', text: sprintf('Form reply for [%s] %j',res.domain,res.ns4chain)});
+			if ((/^(A|AAAA|TXT|ANY)$/.test(res.type))){
+			    if (!sys.is_null(res.ns4chain) && typeof res.ns4chain == 'object'){
+				for (var index in res.ns4chain){
+				    var tmp = res.ns4chain[index];
+				    if (!sys.is_null(tmp.type)){
+					res.response.answer.push(
+					    dnsSource[dnsSource.consts.QTYPE_TO_NAME[tmp.type]](tmp)
+					);
+				    }
+				}
+			    }
+
+			    if (sys.is_null(res.error)){
+				if (sys.is_null(res.ns4chain) || typeof res.ns4chain !== 'object' || res.response.answer.length == 0){
+				    if ((/^(A|AAAA)$/.test(res.type))){
+					res.error = 'domain "'+res.domain+'" has no IP';
+					res.errorCode = 'NOTFOUND';
+				    }else{
+					res.error = 'No data for the reply...';
+				    }
+				}
+			    }
+
+			    if (!sys.is_null(res.error)){
+				sys.console({level: 'error', text: res.error });
+				if (sys.is_null(res.errorCode)){
+				    res.response.header.rcode = dnsSource.consts.NAME_TO_RCODE.SERVFAIL;
+				}else{
+				    res.response.header.rcode = dnsSource.consts.NAME_TO_RCODE[res.errorCode];
+				}
+			    }
+			}
+
+			try {
+			    res.response.send();
+			}
+			catch(e){
+			    sys.console({level: 'error',text: 'Error on reply occurred => ', obj: e});
+			    res.response.answer = [];
+			    res.response.header.rcode = dnsSource.consts.NAME_TO_RCODE.SERVFAIL;
+			    try {
+				res.response.send();
+			    }
+			    catch(e){
+				sys.console({level: 'error',text: 'Send info about error failed => ', obj: e});
+			    }
+			}
+		}
+	    };
+	    rpc.lookup( request );
+    }
+    catch(e){
+	sys.console({level: 'error', text: 'ns4chain.request failed', obj: obj});
+    }
 }
 
 ns4chain.rpcData = function( obj ){
@@ -75,7 +217,11 @@ ns4chain.rpcData = function( obj ){
     }else{
 	sys.console({level: 'debug', text: 'chainData.value is not defined or not JSON string'});
 	res.errorCode = 'NOTFOUND';	//see node_modules/native-dns-packet/consts.js NAME_TO_RCODE
-	obj.callback( res );
+	if (!sys.is_null(obj.callback) && typeof obj.callback === 'function'){
+	    obj.callback( res );
+	}else{
+	    sys.console({level: 'error', text: 'ns4chain.rpcData: callback is not set or not a function', obj: obj});
+	}
     }
 }
 
@@ -343,7 +489,11 @@ ns4chain.oldResolver = function( obj ){
 
 	oldDNSreq.on('timeout', function () {
 	    obj.res.error=sprintf('oldDNS: request to %s:%s for %s [%s] timeout',dnsHost,dnsPort,obj.name,obj.res.type);
-	    obj.callback( obj.res );
+	    if (!sys.is_null(obj.callback) && typeof obj.callback === 'function'){
+		obj.callback( obj.res );
+	    }else{
+		sys.console({level: 'error', text: 'ns4chain.oldResolver: callback is not set or not a function', obj: obj});
+	    }
 	});
 
 	oldDNSreq.on('message', function (err, answer) {
@@ -360,7 +510,12 @@ ns4chain.oldResolver = function( obj ){
 		obj.res.error='oldDNS: no data was received';
 		obj.res.errorCode = 'NOTFOUND';
 	    }
-	    obj.callback( obj.res );
+
+	    if (!sys.is_null(obj.callback) && typeof obj.callback === 'function'){
+		obj.callback( obj.res );
+	    }else{
+		sys.console({level: 'error', text: 'ns4chain.oldResolver: callback is not set or not a function', obj: obj});
+	    }
 	});
 
 	oldDNSreq.on('end', function () {

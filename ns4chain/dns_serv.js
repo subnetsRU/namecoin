@@ -31,9 +31,10 @@ fs = require('fs');                             //https://nodejs.org/api/fs.html
 util = require('util');                         //https://nodejs.org/api/util.html
 sprintf = require("sprintf-js").sprintf;        //https://www.npmjs.com/package/sprintf-js
 dnsSource = require('native-dns');		//https://github.com/tjfontaine/node-dns
+inSubnet = require('insubnet');			//https://www.npmjs.com/package/insubnet
 
 config = require('./dns_serv_options');
-config.version = '0.5.2';
+config.version = '0.6.0';
 sys = require('./dns_func');
 rpc = require('./rpc_client');
 ns4chain = require('./ns4chain');
@@ -43,9 +44,24 @@ var argv = process.argv.slice(2);
 
 while (argv[0] && argv[0][0] == '-') {
     switch (argv[0]) {
-	case '-p':
-	case '--port':
-	    config.port = argv[1];
+	case '-d':
+	case '--debug':
+	    if (argv[1] == 'none'){
+		//Debug is off
+		config.DEBUG = 0;
+	    }else if (argv[1] == 'log'){
+		//Debug is on: logifile
+		config.DEBUG = 1;
+	    }else if (argv[1] == 'cli'){
+		//Debug is on: cli
+		config.DEBUG = 2;
+	    }else if (argv[1] == 'full'){
+		//Debug is on: logifile, cli
+		config.DEBUG = 3;
+	    }else{
+		//Unknown param, set default
+		config.DEBUG = 0;
+	    }
 	    argv = argv.slice(2);
 	    break;
 	case '-l':
@@ -53,9 +69,22 @@ while (argv[0] && argv[0][0] == '-') {
 	    config.listen = argv[1];
 	    argv = argv.slice(2);
 	    break;
+	case '-p':
+	case '--port':
+	    config.port = argv[1];
+	    argv = argv.slice(2);
+	    break;
 	case '-t':
 	case '--ttl':
 	    config.ttl = argv[1];
+	    argv = argv.slice(2);
+	    break;
+	case '-r':
+	case '--recursion':
+	    if (sys.is_null(config.recursion)){
+		config.recursion = {};
+	    }
+	    config.recursion.enabled = true;
 	    argv = argv.slice(2);
 	    break;
 	case '-h':
@@ -73,38 +102,69 @@ dns = dnsSource.createServer({ dgram_type: 'udp4' });
 
 dns.on('listening', function(){
     sys.console({level: 'info', text: sprintf('Starting DNS server v%s on %j',config.version,dns.address())});
+    sys.console({level: 'debug', text: sprintf('Configuration %j',config)});
 });
 
 dns.on('request', function (request, response) {
     try {
-	var error;
+	var error,recursion;
 	var domain = request.question[0].name.toLowerCase();
 	var type = dnsSource.consts.QTYPE_TO_NAME[request.question[0].type];
-	sys.console({level: 'info', text: 'Got request from ['+request.address.address+':'+request.address.port+'] for ['+type+'] ['+domain+']'});
+	sys.console({level: 'info', text: 'Request from ['+request.address.address+':'+request.address.port+'] for ['+type+'] ['+domain+']'});
 
-	//for rcode see node_modules/native-dns-packet/consts.js -> NAME_TO_RCODE
-	if (!(/\.bit/.test(domain))){
-	    error = 'REFUSED';
-	}else if (!(/^(A|AAAA|TXT|ANY)$/.test(type))){
-	    error = 'NOTIMP';
-	}
-
-	var tmpName = domain.split('.');
-	var name = tmpName[0];
-	var zone = tmpName[tmpName.length-1];
-	var subDomain = null;
-	if (tmpName.length > 2){
-	    name = tmpName[tmpName.length-2];
-	    re = new RegExp('(.*)\.' + name + '\.' + tmpName[tmpName.length-1] + '$');
-	    subMatch = domain.match(re);
-	    if (!sys.is_null(subMatch[1])){
-		subDomain = subMatch[1];
+	if (sys.is_null(config.recursion) || sys.is_null(config.recursion.enabled)){
+	    //for rcode see node_modules/native-dns-packet/consts.js -> NAME_TO_RCODE
+	    if (!(/\.bit/.test(domain))){
+		error = 'REFUSED';
+	    }else if (!(/^(A|AAAA|TXT|ANY)$/.test(type))){
+		error = 'NOTIMP';
 	    }
 	}
-	
-	//https://wiki.namecoin.info/index.php?title=Domain_Name_Specification#Regular_Expression
-	if ((/\.bit/.test(domain)) && !(/^[a-z]([a-z0-9-]{0,62}[a-z0-9])?$/.test(name))){
-	    error = 'NOTFOUND';
+
+	if (!(/\.bit/.test(domain))){
+	    recursion = true;
+	    if (!(/^([a-z0-9]+\.)?[a-z0-9][a-z0-9-]*\.[a-z]{2,10}$/i.test(domain))){
+		error = 'NOTFOUND';
+	    }
+	    if (sys.is_null(error) && !sys.is_null(config.recursion.enabled)){
+		if (config.recursion.allow != undefined && typeof config.recursion.allow == 'object'){
+		    var allowRecursion = false;
+		    for (var index in config.recursion.allow){
+			if (!sys.is_null(config.recursion.allow[index])){
+			    if (!sys.is_null(inSubnet.Auto(request.address.address,config.recursion.allow[index]))){
+				allowRecursion = true;
+				break;
+			    }
+			}
+		    }
+		    if (sys.is_null(allowRecursion)){
+			sys.console({level: 'info', text: sprintf('recursion not allowed for %s',request.address.address)});
+			error = 'REFUSED';
+		    }
+		}else{
+		    sys.console({level: 'error', text: 'recursion enabled, allow list is set but not valid'});
+		    error = 'REFUSED';
+		}
+	    }
+	}else{
+	    if (sys.is_null(error)){
+		var tmpName = domain.split('.');
+		var name = tmpName[0];
+		var zone = tmpName[tmpName.length-1];
+		var subDomain = null;
+		if (tmpName.length > 2){
+		    name = tmpName[tmpName.length-2];
+		    re = new RegExp('(.*)\.' + name + '\.' + tmpName[tmpName.length-1] + '$');
+		    subMatch = domain.match(re);
+		    if (!sys.is_null(subMatch[1])){
+			subDomain = subMatch[1];
+		    }
+		}
+		//https://wiki.namecoin.info/index.php?title=Domain_Name_Specification#Regular_Expression
+		if ((/\.bit/.test(domain)) && !(/^[a-z]([a-z0-9-]{0,62}[a-z0-9])?$/.test(name))){
+		    error = 'NOTFOUND';
+		}
+	    }
 	}
 
 	if (!sys.is_null(error)){
@@ -112,84 +172,28 @@ dns.on('request', function (request, response) {
 	    response.header.rcode = dnsSource.consts.NAME_TO_RCODE[error];
 	    response.send();
 	}else{
-	    sys.console({level: 'debug', text: sprintf("Domain [%s] subdomain [%s]",name,subDomain)});
-	    var request = {
-		response: response,
-		domain: domain,
-		type: type,
-		name: name,
-		zone: zone,
-		subDomain: subDomain,
-		class: (!sys.is_null(request.question[0].class) ? request.question[0].class : 1),
-		callback: function( res ){
-		    zoneData = {};
-		    if (sys.is_null(res.error)){
-			ns4chain.rpcData( { res: res, callback: this.ns4chainResponse } );
-		    }else{
-			sys.console({level: 'error', text: res.error });
-			if (sys.is_null(res.errorCode)){
-			    res.response.header.rcode = dnsSource.consts.NAME_TO_RCODE.SERVFAIL;
-			}else{
-			    res.response.header.rcode = dnsSource.consts.NAME_TO_RCODE[res.errorCode];
-			}
-			res.response.send();
-		    }
-		},
-		ns4chainResponse: function( res ){
-			sys.console({level: 'info', text: sprintf('Form reply for [%s] %j',res.domain,res.ns4chain)});
-			if ((/^(A|AAAA|TXT|ANY)$/.test(res.type))){
-			    if (!sys.is_null(res.ns4chain) && typeof res.ns4chain == 'object'){
-				for (var index in res.ns4chain){
-				    var tmp = res.ns4chain[index];
-				    if (!sys.is_null(tmp.type)){
-					res.response.answer.push(
-					    dnsSource[dnsSource.consts.QTYPE_TO_NAME[tmp.type]](tmp)
-					);
-				    }
-				}
-			    }
-
-			    if (sys.is_null(res.error)){
-				if (sys.is_null(res.ns4chain) || typeof res.ns4chain !== 'object' || res.response.answer.length == 0){
-				    if ((/^(A|AAAA)$/.test(res.type))){
-					res.error = 'domain "'+res.domain+'" has no IP';
-					res.errorCode = 'NOTFOUND';
-				    }else{
-					res.error = 'No data for the reply...';
-				    }
-				}
-			    }
-
-			    if (!sys.is_null(res.error)){
-				sys.console({level: 'error', text: res.error });
-				if (sys.is_null(res.errorCode)){
-				    res.response.header.rcode = dnsSource.consts.NAME_TO_RCODE.SERVFAIL;
-				}else{
-				    res.response.header.rcode = dnsSource.consts.NAME_TO_RCODE[res.errorCode];
-				}
-			    }
-			}
-
-			try {
-			    res.response.send();
-			}
-			catch(e){
-			    sys.console({level: 'error',text: 'Error on reply occurred => ', obj: e});
-			    res.response.answer = [];
-			    res.response.header.rcode = dnsSource.consts.NAME_TO_RCODE.SERVFAIL;
-			    try {
-				res.response.send();
-			    }
-			    catch(e){
-				sys.console({level: 'error',text: 'Send info about error failed => ', obj: e});
-			    }
-			}
-		}
-	    };
-	    rpc.lookup( request );
+	    if (sys.is_null(recursion)){
+		sys.console({level: 'debug', text: sprintf("Domain [%s] subdomain [%s]",name,subDomain)});
+		ns4chain.request({
+		    response: response,
+		    domain: domain,
+		    type: type,
+		    name: name,
+		    zone: zone,
+		    subDomain: subDomain,
+		    class: (!sys.is_null(request.question[0].class) ? request.question[0].class : 1),
+		});
+	    }else{
+		ns4chain.recursive({
+		    response: response,
+		    domain: domain,
+		    type: type,
+		    class: (!sys.is_null(request.question[0].class) ? request.question[0].class : 1),
+		});
+	    }
 	}
     }catch(e){
-	sys.console({level: 'error', text: 'DNS error on request occurred', obj: request});
+	sys.console({level: 'error', text: 'DNS request failed', obj: request});
 	console.log(e);
     }
 });
