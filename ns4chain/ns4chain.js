@@ -202,10 +202,8 @@ ns4chain.rpcData = function( obj ){
 //TODO: service records
 	for (var index in chainData.value.map){
 	    if (!(/^_/).test(index)){
-		if (!sys.is_null(index)){
-		    var subDomain = index + (!sys.is_null(index) ? '.' : '') + fqdn;
-		    zoneData[subDomain]=chainData.value.map[index];
-		}
+		var subDomain = index + (!sys.is_null(index) ? '.' : '') + fqdn;
+		zoneData[subDomain]=chainData.value.map[index];
 	    }
 	}
 
@@ -244,7 +242,6 @@ ns4chain.resolv = function( obj ){
     //	* https://wiki.namecoin.org/index.php?title=Domain_Name_Specification
     //	* https://github.com/namecoin/proposals/blob/master/ifa-0001.md
     //
-//TODO: Protect endless loop on CNAMEs
     var host = obj.domain; 
     var domain = obj.fqdn;
     var callback = obj.callback;
@@ -252,35 +249,54 @@ ns4chain.resolv = function( obj ){
     var tmp = null;
     var hostFound = 0;
 
+    if (sys.is_null(config.maxalias)){
+	config.maxalias = 16;
+    }
     if (sys.is_null(obj.res.ns4chain)){
 	obj.res.ns4chain = [];
     }
-    
-    sys.console({level: 'debug', text: 'Doing resolv '+host+' in '+domain});
-    if (sys.is_null(zoneData[host]) && host != '*.'+domain){
-	sys.console({level: 'debug', text: 'Host '+host+' not found, trying *.'+domain});
-	host = '*.'+domain;
-	if (!sys.is_null(zoneData['*.'+domain])){
-	    sys.console({level: 'debug', text: 'Doing resolv '+host+' in '+domain});
+    if (sys.is_null(obj.loop)){
+	obj.loop = 0;
+    }
+    obj.loop++;
+
+    sys.console({level: 'debug', text: sprintf('[#%d] Doing resolv %s in %s',obj.loop,host,domain)});
+    if (obj.loop >= config.maxalias){
+	obj.res.errorCode = 'NOTFOUND';
+	obj.res.error='Max alias reached. Stop searching, '+host+' not found';
+    }
+
+    if (sys.is_null(obj.res.error)){
+	if (sys.is_null(zoneData[host]) && host != '*.'+domain){
+	    sys.console({level: 'debug', text: 'Host '+host+' not found, trying *.'+domain});
+	    host = '*.'+domain;
+	    if (!sys.is_null(zoneData['*.'+domain])){
+		sys.console({level: 'debug', text: 'Doing resolv '+host+' in '+domain});
+	    }
+	}
+
+	if (sys.is_null(zoneData[host])){
+	    obj.res.error='Host '+host+' not found';
+	    obj.res.errorCode = 'NOTFOUND';
 	}
     }
 
-    if ((/^(TXT|ANY)$/.test(obj.res.type))){
-	var txtData = [
-	    'txid: ' + (!sys.is_null(obj.res.data.txid) ? obj.res.data.txid : 'unknown'),
-	    'address: ' + (!sys.is_null(obj.res.data.address) ? obj.res.data.address : 'unknown'),
-	    'expires: ' + (!sys.is_null(obj.res.data.expires_in) ? obj.res.data.expires_in : 'unknown'),
-	];
-	obj.res.ns4chain.push({
-	    name: host,
-	    type: 16,
-	    class: obj.res.class,
-	    data: txtData,
-	    ttl: config.ttl,
-	});
-    }
+    if (sys.is_null(obj.res.error)){
+	if (obj.loop == 1 && (/^(TXT|ANY)$/.test(obj.res.type))){
+	    var txtData = [
+		'txid: ' + (!sys.is_null(obj.res.data.txid) ? obj.res.data.txid : 'unknown'),
+		'address: ' + (!sys.is_null(obj.res.data.address) ? obj.res.data.address : 'unknown'),
+		'expires: ' + (!sys.is_null(obj.res.data.expires_in) ? obj.res.data.expires_in : 'unknown'),
+	    ];
+	    obj.res.ns4chain.push({
+		name: host,
+		type: 16,
+		class: obj.res.class,
+		data: txtData,
+		ttl: config.ttl,
+	    });
+	}
 
-    if (!sys.is_null(zoneData[host])){
 	//If NS servers is set ignore chain data
 	if (!sys.is_null(zoneData[host].ns)){
 //TODO: NS IPv6 support
@@ -373,7 +389,7 @@ ns4chain.resolv = function( obj ){
 		    if (alias == ''){
 			var prevLevel = host.split('.');
 			prevLevel.shift();
-			sys.console({level: 'debug', text: 'Found alias type#1 to '+prevLevel.join('.')});
+			sys.console({level: 'debug', text: 'Found empty alias to '+prevLevel.join('.')});
 			obj.res.ns4chain.push({
 			    name: host,
 			    type: 5,
@@ -381,7 +397,7 @@ ns4chain.resolv = function( obj ){
 			    data: prevLevel.join('.'),
 			    ttl: config.ttl,
 			});
-			noCallback = ns4chain.resolv( { res: obj.res, domain: prevLevel.join('.'), fqdn: domain, callback: obj.callback, noCallback: true } );
+			noCallback = ns4chain.resolv( { loop: obj.loop, res: obj.res, domain: prevLevel.join('.'), fqdn: domain, callback: obj.callback, noCallback: true } );
 		    }else if ((/\.$/).test(alias)){
 			//FQDN alias
 			var re = new RegExp(obj.res.name + '\.' + obj.res.zone + '\.$');
@@ -406,44 +422,42 @@ ns4chain.resolv = function( obj ){
 				data: alias.replace(/\.$/,''),
 				ttl: config.ttl,
 			    });
-			    noCallback = ns4chain.resolv( { res: obj.res, domain: alias.replace(/\.$/,''), fqdn: domain, callback: obj.callback, noCallback: true } );
+			    noCallback = ns4chain.resolv( { loop: obj.loop, res: obj.res, domain: alias.replace(/\.$/,''), fqdn: domain, callback: obj.callback, noCallback: true } );
 			}
 		    }else{
 			var matches = alias.match(/^(.*)\.\@$/);
-			if (!sys.is_null(matches)){
-			    sys.console({level: 'debug', text: 'Found alias type#2 to '+alias});
+			if (!sys.is_null(matches) && !sys.is_null(matches[1])){
+			    alias = matches[1];
+			}
+
+			sys.console({level: 'debug', text: 'Found alias to '+alias+'.'+domain});
+			if (!sys.is_null(zoneData[alias+'.'+domain])){
 			    obj.res.ns4chain.push({
 				name: host,
 				type: 5,
 				class: obj.res.class,
-				data: matches[1]+'.'+domain,
+				data: alias+'.'+domain,
 				ttl: config.ttl,
 			    });
-			    noCallback = ns4chain.resolv( { res: obj.res, domain: matches[1]+'.'+domain, fqdn: domain, callback: obj.callback, noCallback: true } );
+			    noCallback = ns4chain.resolv( { loop: obj.loop, res: obj.res, domain: alias+'.'+domain, fqdn: domain, callback: obj.callback, noCallback: true } );
 			}else{
-			    if (!sys.is_null(zoneData[alias+'.'+domain])){
-				sys.console({level: 'debug', text: 'Found alias type#3 to '+alias+'.'+domain});
-				obj.res.ns4chain.push({
-				    name: host,
-				    type: 5,
-				    class: obj.res.class,
-				    data: alias+'.'+domain,
-				    ttl: config.ttl,
-				});
-				noCallback = ns4chain.resolv( { res: obj.res, domain: alias+'.'+domain, fqdn: domain, callback: obj.callback, noCallback: true } );
-			    }
+			    sys.console({level: 'debug', text: 'Alias '+alias+'.'+domain+' not found'});
+			    obj.res.error='Alias '+alias+'.'+domain+' not found';
+			    obj.res.errorCode = 'NOTFOUND';
 			}
 		    }
 		}
 	    }
 	}
-    }else{
-	sys.console({level: 'debug', text: 'Host '+host+' not found'});
     }
 
     if (sys.is_null(obj.noCallback) && sys.is_null(noCallback) ){
 	sys.console({level: 'debug', text: 'Resolv result', obj: (!sys.is_null(obj.res.ns4chain) ? obj.res.ns4chain : {}) });
-	callback( obj.res );
+	if (!sys.is_null(callback) && typeof callback === 'function'){
+	    callback( obj.res );
+	}else{
+	    sys.console({level: 'error', text: 'ns4chain.resolv: callback is not set or not a function', obj: obj});
+	}
     }
     return noCallback;
 }
