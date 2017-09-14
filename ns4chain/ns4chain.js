@@ -192,21 +192,47 @@ ns4chain.request = function( obj ){
 ns4chain.rpcData = function( obj ){
     var res = obj.res;
     var chainData = res.chainData;
-    res.data = chainData;
     if (!sys.is_null(chainData.value) && sys.IsJsonString(chainData.value) === true){
 	chainData.value = JSON.parse(chainData.value);
 	var fqdn = res.name+'.'+res.zone;
 	var tmpData = sys.cloneObj(chainData.value);
+	var subDomain = null;
 	delete tmpData.map;
 	zoneData[fqdn] = tmpData;
 //TODO: service records
 	for (var index in chainData.value.map){
 	    if (!(/^_/).test(index)){
-		var subDomain = index + (!sys.is_null(index) ? '.' : '') + fqdn;
-		zoneData[subDomain]=chainData.value.map[index];
+		subDomain = index + (!sys.is_null(index) ? '.' : '') + fqdn;
+		if (sys.is_null(zoneData[subDomain])){
+		    zoneData[subDomain]={};
+		}
+		if (!sys.is_null(zoneData[subDomain])){
+		    if (typeof chainData.value.map[index] == 'object'){
+			for (var k in chainData.value.map[index]){
+			    if (sys.is_null(k)){
+				if (sys.is_null(zoneData[subDomain].ip)){
+				    zoneData[subDomain].ip=chainData.value.map[index][k];
+				}
+			    }else{
+				zoneData[subDomain][k]=chainData.value.map[index][k];
+			    }
+			}
+		    }else if (sys.is_null(index) && typeof chainData.value.map[index] == 'string'){
+			/*
+			    "map": {                    // This is equivalent to "ip": "192.0.2.2"
+				"ip": "192.0.2.2"         // Takes precedence
+				"": {
+    				    "ip": "192.0.2.1"       // Ignored
+				}
+			    }
+			*/
+			if (sys.is_null(zoneData[subDomain].ip)){
+			    zoneData[subDomain].ip = chainData.value.map[index];
+			}
+		    }
+		}
 	    }
 	}
-
 	for (var index in zoneData){
 	    ns4chain.findMap(index,zoneData,0);
 	}
@@ -260,7 +286,7 @@ ns4chain.resolv = function( obj ){
     }
     obj.loop++;
 
-    sys.console({level: 'debug', text: sprintf('[#%d] Doing resolv %s in %s',obj.loop,host,domain)});
+    sys.console({level: 'debug', text: sprintf('#iter%d: Doing resolv %s in %s',obj.loop,host,domain)});
     if (obj.loop >= config.maxalias){
 	obj.res.errorCode = 'NOTFOUND';
 	obj.res.error='Max alias reached. Stop searching, '+host+' not found';
@@ -302,53 +328,20 @@ ns4chain.resolv = function( obj ){
 //TODO: NS IPv6 support
 //TODO: secondary NS support
 //TODO: ANY|TXT and other types of requests rather then A to external NS
-	    if (typeof zoneData[host].ns == 'object' && !sys.is_null(zoneData[host].ns[0])){
-		zoneData[host].ns = zoneData[host].ns[0];
-	    }
-	    sys.console({level: 'debug', text: sprintf('Found NS server %s for %s',zoneData[host].ns,host)});
-	    obj.res.ns4chain.push({
-		name: host,
-		type: 2,
-		class: obj.res.class,
-		data: zoneData[host].ns,
-		ttl: config.ttl,
-	    });
-
-	    if (!(/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/).test(zoneData[host].ns)){
-		sys.console({level: 'debug', text: sprintf('Trying to resolv NS name %s',zoneData[host].ns,host)});
-		try {
-		    request = dnsSource.lookup(zoneData[host].ns, function (err, nsIP, result) {
-			var error = null;
-			if (!sys.is_null(err)){
-			    error=sprintf('Resolv error on NS name %s: %j',zoneData[host].ns,err);
-			}else{
-			    if (sys.is_null(nsIP)){
-				error=sprintf('Cant resolv NS name %s to IP',zoneData[host].ns);
-			    }else{ 
-				if (!(/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/).test(nsIP)){
-				    error=sprintf('NS name %s resolved to [%s]',zoneData[host].ns,nsIP);
-				}else if (!sys.is_null(nsIP) && nsIP == '127.0.0.1'){
-				    error=sprintf('NS name %s is point to myself [%s]',zoneData[host].ns,nsIP);
-				}
-			    }
-			}
-
-			if (!sys.is_null(error)){
-			    obj.res.error = error;
-			    callback( obj.res );
-			}else{
-			    ns4chain.oldResolver( {res: obj.res, name: host, server: nsIP, callback: obj.callback} );
-			}
-		    });
-		    noCallback = true;
+		if (typeof zoneData[host].ns == 'string' && !sys.is_null(zoneData[host].ns)){
+		    zoneData[host].ns = [ zoneData[host].ns ] ;
 		}
-		catch(e){
-		    sys.console({level: 'error', text: sprintf('Cant resolve NS server %s',zoneData[host].ns)});
+
+		sys.console({level: 'debug', text: sprintf('Found NS servers [%s] for %s',zoneData[host].ns.join(', '),host)});
+		var nsTMP=[];
+		var nn = zoneData[host].ns.length-1;
+
+		for (var i=nn; nn >=0;nn--){
+		    nsTMP.push( zoneData[host].ns[nn] );
 		}
-	    }else{
-		ns4chain.oldResolver( {res: obj.res, name: host, server: zoneData[host].ns, callback: obj.callback} );
+
+		ns4chain.zoneNS({res: obj.res, host: host, nsServers: nsTMP, callback: obj.callback});
 		noCallback = true;
-	    }
 	}else{
 	    if (typeof zoneData[host] === 'string'){
 		if ((/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/).test(zoneData[host])){
@@ -469,7 +462,7 @@ ns4chain.oldResolver = function( obj ){
 	    config.oldDNS = { 
 		host: '8.8.8.8',
 		port: 53,
-		timeout: 3000,
+		timeout: 1000,
 	    };
 	}
     }
@@ -478,14 +471,14 @@ ns4chain.oldResolver = function( obj ){
 	config.oldDNS.port = 53;
     }
     if (sys.is_null(config.oldDNS.timeout)){
-	config.oldDNS.timeout = 3000;
+	config.oldDNS.timeout = 1000;
     }
     
     var dnsHost = sys.is_null( obj.server ) ? config.oldDNS.host : obj.server;
     var dnsPort = sys.is_null( obj.server ) ? config.oldDNS.port : 53;
 
     sys.console({level: 'debug', text: sprintf('oldDNS: request NS %s:%s for %s [%s]',dnsHost,dnsPort,obj.name,obj.res.type)});
-
+    obj.res.nsServer = dnsHost;
     var question = dnsSource.Question({
 	name: obj.name,
 	type: obj.res.type,
@@ -562,6 +555,159 @@ ns4chain.multiIP = function( obj ){
 	}
     });
  return ret;
+}
+
+ns4chain.zoneNS = function( obj ){
+    var error = null;
+    if (obj.nsServers == undefined || typeof obj.nsServers != 'object' ){
+	error='ns4chain.zoneNS: NS list is not set or not array';
+	sys.console({level: 'error',text: error,obj: obj});
+    }
+
+    if (sys.is_null(error)){
+	var nsServer = null;
+	if (obj.nsServers.length > 0){
+	    nsServer = obj.nsServers[obj.nsServers.length-1];
+	    sys.console({level: 'debug', text: sprintf('#%d: Trying request NS server %s',obj.nsServers.length,nsServer,obj.host)});
+	    --obj.nsServers.length;
+	    obj.res.nsServers = obj.nsServers;
+	    obj.res.host = obj.host;
+	    obj.res.callback = obj.callback;
+	    //Insert NS info to DNS reply
+	    obj.res.ns4chain.push({
+		name: obj.host,
+		type: 2,
+		class: obj.res.class,
+		data: nsServer,
+		ttl: config.ttl,
+	    });
+	    if (!(/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/).test(nsServer)){
+		ns4chain.zoneNSResolv({
+		    res: obj.res, 
+		    host: obj.host, 
+		    nsServer: nsServer, 
+		    callback: function( res ){
+			if (sys.is_null(res.error)){
+			    ns4chain.oldResolver( {
+				res: obj.res,
+				name: obj.host,
+				server: obj.res.nsServer,
+				callback: function ( res ){
+				if (sys.is_null(res.error)){
+				    if (!sys.is_null(res.callback) && typeof res.callback === 'function'){
+					obj.callback( res );
+				    }else{
+					    sys.console({level: 'error', text: 'ns4chain.zoneNS: callback is not set or not a function', obj: obj});
+					}
+				    }else{
+					sys.console({level: 'error', text: sprintf('ns4chain.zoneNS: NS request failed: %s',res.error)});
+					if (res.nsServers.length > 0){
+					    delete( res.error );
+					}
+					--obj.res.ns4chain.length;		//Delete NS info from DNS reply if NS failed
+					ns4chain.zoneNS({res: res, host: res.host, nsServers: res.nsServers, callback: res.callback});
+				    }
+				}
+			    } );
+			}else{
+			    sys.console({level: 'error', text: sprintf('ns4chain.zoneNS: NS resolv request failed: %s',res.error)});
+			    if (res.nsServers.length > 0){
+				delete( res.error );
+			    }
+			    --obj.res.ns4chain.length;		//Delete NS info from DNS reply if NS failed
+			    ns4chain.zoneNS({res: res, host: res.host, nsServers: res.nsServers, callback: res.callback});
+			}
+		    }
+		});
+	    }else{
+		ns4chain.oldResolver( {
+		    res: obj.res,
+		    name: obj.host,
+		    server: nsServer,
+		    callback: function ( res ){
+			if (sys.is_null(res.error)){
+			    if (!sys.is_null(res.callback) && typeof res.callback === 'function'){
+				obj.callback( res );
+			    }else{
+				sys.console({level: 'error', text: 'ns4chain.zoneNS: callback is not set or not a function', obj: obj});
+			    }
+			}else{
+			    sys.console({level: 'error', text: sprintf('ns4chain.zoneNS: NS request failed: %s',res.error)});
+			    if (res.nsServers.length > 0){
+				delete( res.error );
+			    }
+			    --obj.res.ns4chain.length;		//Delete NS info from DNS reply if NS failed
+			    ns4chain.zoneNS({res: res, host: res.host, nsServers: res.nsServers, callback: res.callback});
+			}
+		    }
+		} );
+	    }
+	}else{
+	    sys.console({level: 'debug', text: 'ns4chain.zoneNS: No NS servers left, return'});
+	    if (!sys.is_null(obj.callback) && typeof obj.callback === 'function'){
+		obj.callback( obj.res );
+	    }else{
+		sys.console({level: 'error', text: 'ns4chain.zoneNS: callback is not set or not a function', obj: obj});
+	    }
+	}
+    }else{
+	if (!sys.is_null(obj.callback) && typeof obj.callback === 'function'){
+	    obj.res.error=error;
+	    obj.callback( obj.res );
+	}else{
+	    sys.console({level: 'error', text: 'ns4chain.zoneNS: callback is not set or not a function', obj: obj});
+	}
+    }
+}
+
+ns4chain.zoneNSResolv = function( obj ){
+    var error = null;
+    if (sys.is_null(obj.nsServer)){
+	error='ns4chain.zoneNSResolv: NS server is not set or null';
+	sys.console({level: 'error',text: error,obj: obj});
+    }
+
+    if (sys.is_null(error)){
+	sys.console({level: 'debug', text: sprintf('Trying to resolv NS name %s',obj.nsServer)});
+	try {
+	    request = dnsSource.lookup(obj.nsServer, function (err, nsIP, result) {
+		var error = null;
+		obj.res.nsServer = nsIP;
+		sys.console({level: 'debug', text: sprintf('NS name %s resolved to %s',obj.nsServer,obj.res.nsServer)});
+		if (!sys.is_null(err)){
+		    error=sprintf('Resolv error on NS name %s: %j',obj.nsServer,err);
+		}else{
+		    if (sys.is_null(nsIP)){
+			error=sprintf('Cant resolv NS name %s to IP',obj.nsServer);
+		    }else{ 
+			if (!(/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/).test(nsIP)){
+			    error=sprintf('NS name %s resolved to [%s]',obj.nsServer,nsIP);
+			}else if (!sys.is_null(nsIP) && nsIP == '127.0.0.1'){
+			    error=sprintf('NS name %s is point to myself [%s]',obj.nsServer,nsIP);
+			}
+		    }
+		}
+		if (!sys.is_null(error)){
+		    obj.res.error = error;
+		}
+		if (!sys.is_null(obj.callback) && typeof obj.callback === 'function'){
+		    obj.callback( obj.res );
+		}else{
+		    sys.console({level: 'error', text: 'ns4chain.zoneNSResolv: callback is not set or not a function', obj: obj});
+		}
+	    });
+	}
+	catch(e){
+	    sys.console({level: 'error', text: 'ns4chain.zoneNSResolv: failed', obj: e});
+	}
+    }else{
+	if (!sys.is_null(obj.callback) && typeof obj.callback === 'function'){
+	    obj.res.error=error;
+	    obj.callback( obj.res );
+	}else{
+	    sys.console({level: 'error', text: 'ns4chain.zoneNSResolv: callback is not set or not a function', obj: obj});
+	}
+    }
 }
 
 module.exports = ns4chain;

@@ -34,7 +34,7 @@ dnsSource = require('native-dns');		//https://github.com/tjfontaine/node-dns
 inSubnet = require('insubnet');			//https://www.npmjs.com/package/insubnet
 
 config = require('./dns_serv_options');
-config.version = '0.6.1';
+config.version = '0.6.2';
 sys = require('./dns_func');
 rpc = require('./rpc_client');
 ns4chain = require('./ns4chain');
@@ -177,7 +177,7 @@ dns.on('request', function (request, response) {
 	    response.send();
 	}else{
 	    if (sys.is_null(recursion)){
-		sys.console({level: 'debug', text: sprintf("Domain [%s] subdomain [%s]",name,subDomain)});
+		sys.console({level: 'debug', text: sprintf("Bit domain [%s]%s",name,(!sys.is_null(subDomain) ? ' subdomain ['+ subDomain +']' : ''))});
 		ns4chain.request({
 		    response: response,
 		    domain: domain,
