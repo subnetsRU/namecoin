@@ -104,6 +104,7 @@ ns4chain.recursive = function( obj ){
 
 ns4chain.request = function( obj ){
     try{
+	    obj.response.header.aa = 1;		//authoritative answer for chain
 	    var request = {
 		response: obj.response,
 		domain: obj.domain,
@@ -132,9 +133,8 @@ ns4chain.request = function( obj ){
 		    }
 		},
 		ns4chainResponse: function( res ){
-			sys.console({level: 'info', text: sprintf('Form reply for [%s] %j',res.domain,res.ns4chain)});
-			if ((/^(A|AAAA|TXT|ANY)$/.test(res.type))){
-			    if (!sys.is_null(res.ns4chain) && typeof res.ns4chain == 'object'){
+			sys.console({level: 'info', text: sprintf('Form reply for [%s]\nreply: %j%s%s%s',res.domain,res.ns4chain,(!sys.is_null(res.response.authority) ? sprintf('\nauthority: %j',res.response.authority) : ''),(!sys.is_null(res.response.additional) ? sprintf('\nadditional: %j',res.response.additional) : ''),(!sys.is_null(res.response.edns_options) ? sprintf('\nedns_options: %j',res.response.edns_options) : ''))});
+			if (!sys.is_null(res.ns4chain) && typeof res.ns4chain == 'object'){
 				for (var index in res.ns4chain){
 				    var tmp = res.ns4chain[index];
 				    if (!sys.is_null(tmp.type)){
@@ -143,9 +143,9 @@ ns4chain.request = function( obj ){
 					);
 				    }
 				}
-			    }
+			}
 
-			    if (sys.is_null(res.error)){
+			if (sys.is_null(res.error)){
 				if (sys.is_null(res.ns4chain) || typeof res.ns4chain !== 'object' || res.response.answer.length == 0){
 				    if ((/^(A|AAAA)$/.test(res.type))){
 					res.error = 'domain "'+res.domain+'" has no IP';
@@ -154,16 +154,15 @@ ns4chain.request = function( obj ){
 					res.error = 'No data for the reply...';
 				    }
 				}
-			    }
+			}
 
-			    if (!sys.is_null(res.error)){
+			if (!sys.is_null(res.error)){
 				sys.console({level: 'error', text: res.error });
 				if (sys.is_null(res.errorCode)){
 				    res.response.header.rcode = dnsSource.consts.NAME_TO_RCODE.SERVFAIL;
 				}else{
 				    res.response.header.rcode = dnsSource.consts.NAME_TO_RCODE[res.errorCode];
 				}
-			    }
 			}
 
 			try {
@@ -273,7 +272,7 @@ ns4chain.resolv = function( obj ){
     var callback = obj.callback;
     var noCallback = null;
     var tmp = null;
-    var hostFound = 0;
+    var stopLooking = 0;
 
     if (sys.is_null(config.maxalias)){
 	config.maxalias = 16;
@@ -286,11 +285,12 @@ ns4chain.resolv = function( obj ){
     }
     obj.loop++;
 
-    sys.console({level: 'debug', text: sprintf('#iter%d: Doing resolv %s in %s',obj.loop,host,domain)});
+    sys.console({level: 'debug', text: sprintf('#iter%d: Doing resolv %s [%s] in %s',obj.loop,host,obj.res.type,domain)});
     if (obj.loop >= config.maxalias){
 	obj.res.errorCode = 'NOTFOUND';
 	obj.res.error='Max alias reached. Stop searching, '+host+' not found';
     }
+
 
     if (sys.is_null(obj.res.error)){
 	if (sys.is_null(zoneData[host]) && host != '*.'+domain){
@@ -307,12 +307,81 @@ ns4chain.resolv = function( obj ){
 	}
     }
 
-    if (sys.is_null(obj.res.error)){
+    /*
+	Service records: _service._proto.name TTL class SRV priority weight port target
+	ex.: [["smtp","tcp",10,0,25,"mx"]]
+	    [0] - service
+	    [1] - proto
+	    [2] - priority
+	    [3] - weight
+	    [4] - port number
+	    [5] - name
+    */
+    if (sys.is_null(obj.res.error) && sys.is_null(zoneData[host].ns) && (/^(MX|SRV)$/.test(obj.res.type))){
+	if (!sys.is_null(zoneData[host].service)){
+	    if (typeof zoneData[host].service != 'object'){
+		obj.res.errorCode = 'NOTFOUND';
+		obj.res.error='Request for SERVICE record but chain service data invalid';
+	    }
+	    if (sys.is_null(obj.res.error)){
+		var reDomain = new RegExp('.*\.' + domain + '$');
+		zoneData[host].service.forEach(function (array) {
+		    if (typeof array == 'object' && array.length == 6){
+			if (obj.res.type == 'MX' && array[0] == 'smtp'){
+				var exchange = array[5];
+				if (!(/\.$/).test(exchange)){
+				    if (!exchange.match(reDomain)){
+					exchange = array[5] + '.' + domain;
+				    }
+				}
+				obj.res.ns4chain.push({
+				    name: host,
+				    type: 15,
+				    class: obj.res.class,
+				    priority: (!sys.is_null(array[2]) ? array[2] : 10),
+				    exchange: exchange,
+				    ttl: config.ttl,
+				});
+				stopLooking = 1;
+			}
+		    }else{
+			sys.console({level: 'debug', text: 'ns4chain.resolv: malformed service value, must have 6 items', obj: array});
+		    }
+		});
+
+		if (!sys.is_null(stopLooking)){
+		    //add authoritative answer info
+		    obj.res.response.authority.push({
+			name: host,
+			type: 2,
+			class: obj.res.class,
+			data: config.dnsName,
+			ttl: config.ttl,
+		    });
+		    obj.res.response.additional.push({
+			name: config.dnsName,
+			type: 1,
+			class: obj.res.class,
+			address: dns.address().address,
+			ttl: config.ttl,
+		    });
+		}else{
+		    obj.res.errorCode = 'NOTFOUND';
+		    obj.res.error=sprintf('ns4chain.resolv: No SERVICE record for [%s]',obj.res.type);
+		}
+	    }
+        }else{
+	    obj.res.errorCode = 'NOTFOUND';
+	    obj.res.error=sprintf('ns4chain.resolv: SERVICE record for [%s] not found',host);
+        }
+    }
+
+    if (sys.is_null(obj.res.error) && sys.is_null(stopLooking)){
 	if (obj.loop == 1 && (/^(TXT|ANY)$/.test(obj.res.type))){
 	    var txtData = [
-		'txid: ' + (!sys.is_null(obj.res.data.txid) ? obj.res.data.txid : 'unknown'),
-		'address: ' + (!sys.is_null(obj.res.data.address) ? obj.res.data.address : 'unknown'),
-		'expires: ' + (!sys.is_null(obj.res.data.expires_in) ? obj.res.data.expires_in : 'unknown'),
+		'txid: ' + (!sys.is_null(obj.res.chainData.txid) ? obj.res.chainData.txid : 'unknown'),
+		'address: ' + (!sys.is_null(obj.res.chainData.address) ? obj.res.chainData.address : 'unknown'),
+		'expires: ' + (!sys.is_null(obj.res.chainData.expires_in) ? obj.res.chainData.expires_in : 'unknown'),
 	    ];
 	    obj.res.ns4chain.push({
 		name: host,
@@ -325,9 +394,8 @@ ns4chain.resolv = function( obj ){
 
 	//If NS servers is set ignore chain data
 	if (!sys.is_null(zoneData[host].ns)){
+		obj.res.response.header.aa = 0;		//Non-authoritative answer
 //TODO: NS IPv6 support
-//TODO: secondary NS support
-//TODO: ANY|TXT and other types of requests rather then A to external NS
 		if (typeof zoneData[host].ns == 'string' && !sys.is_null(zoneData[host].ns)){
 		    zoneData[host].ns = [ zoneData[host].ns ] ;
 		}
@@ -336,12 +404,22 @@ ns4chain.resolv = function( obj ){
 		var nsTMP=[];
 		var nn = zoneData[host].ns.length-1;
 
-		for (var i=nn; nn >=0;nn--){
-		    nsTMP.push( zoneData[host].ns[nn] );
+		for (var i=nn; nn >=0; nn--){
+		    if (sys.is_null(zoneData[host].ns[nn])){
+			obj.res.error=sprintf('NS is [%s], skip',zoneData[host].ns[nn]);
+		    }else if (zoneData[host].ns[nn] == dns.address().address){
+			obj.res.error=sprintf('NS [%s] is point to myself',zoneData[host].ns[nn]);
+		    }else if (zoneData[host].ns[nn] == '127.0.0.1' || zoneData[host].ns[nn] == 'localhost'){
+			obj.res.error=sprintf('NS [%s] is point to localhost',zoneData[host].ns[nn]);
+		    }else{
+			nsTMP.push( zoneData[host].ns[nn] );
+		    }
 		}
-
-		ns4chain.zoneNS({res: obj.res, host: host, nsServers: nsTMP, callback: obj.callback});
-		noCallback = true;
+		
+		if (sys.is_null(obj.res.error)){
+		    ns4chain.zoneNS({res: obj.res, host: host, nsServers: nsTMP, callback: obj.callback});
+		    noCallback = true;
+		}
 	}else{
 	    if (typeof zoneData[host] === 'string'){
 		if ((/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/).test(zoneData[host])){
@@ -352,18 +430,22 @@ ns4chain.resolv = function( obj ){
 		}
 	    }
 
-	    if (!sys.is_null(zoneData[host].ip)){
+	    if ((/^A$/.test(obj.res.type)) && !sys.is_null(zoneData[host].ip)){
 		ns4chain.multiIP({
-		    name: host,
-		    type: 1,
-		    class: obj.res.class,
-		    data: zoneData[host].ip
+			name: host,
+			type: 1,
+			class: obj.res.class,
+			data: zoneData[host].ip
 		}).forEach(function (a) {
-		    obj.res.ns4chain.push( a );
+		    if (obj.res.type == 'MX'){
+			obj.res.response.additional.push( a );
+		    }else{
+			obj.res.ns4chain.push( a );
+		    }
 		});
-	        hostFound = 1;
+		stopLooking = 1;
 	    }
-	    if (!sys.is_null(zoneData[host].ip6)){
+	    if ((/^AAAA$/.test(obj.res.type)) && !sys.is_null(zoneData[host].ip6)){
 		ns4chain.multiIP({
 		    name: host,
 		    type: 28,
@@ -372,11 +454,11 @@ ns4chain.resolv = function( obj ){
 		}).forEach(function (a) {
 		    obj.res.ns4chain.push( a );
 		});
-		hostFound = 1;
+		stopLooking = 1;
 	    }
 
 	    //Looking up alias if no IPs was found
-	    if (sys.is_null(hostFound)){
+	    if (sys.is_null(stopLooking)){
 		if (zoneData[host].alias !== undefined){
 		    var alias = zoneData[host].alias;
 		    if (alias == ''){
@@ -682,13 +764,35 @@ ns4chain.zoneNSResolv = function( obj ){
 		    }else{ 
 			if (!(/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/).test(nsIP)){
 			    error=sprintf('NS name %s resolved to [%s]',obj.nsServer,nsIP);
-			}else if (!sys.is_null(nsIP) && nsIP == '127.0.0.1'){
-			    error=sprintf('NS name %s is point to myself [%s]',obj.nsServer,nsIP);
+			}else{
+			     if (!sys.is_null(nsIP)){
+			        if (nsIP == '127.0.0.1'){
+				    error=sprintf('NS name %s is point to localhost [%s]',obj.nsServer,nsIP);
+				}else if (nsIP == dns.address().address){
+				    error=sprintf('NS name %s is point to myself [%s]',obj.nsServer,nsIP);
+				}
+			    }
 			}
 		    }
 		}
 		if (!sys.is_null(error)){
 		    obj.res.error = error;
+		}else{
+		    //add info about from where authoritative answer can be received from
+		    obj.res.response.authority.push({
+			name: obj.res.domain,
+			type: 2,
+			class: obj.res.class,
+			data: obj.nsServer,
+			ttl: config.ttl,
+		    });
+		    obj.res.response.additional.push({
+			name: obj.nsServer,
+			type: 1,
+			class: obj.res.class,
+			address: obj.res.nsServer,
+			ttl: config.ttl,
+		    });
 		}
 		if (!sys.is_null(obj.callback) && typeof obj.callback === 'function'){
 		    obj.callback( obj.res );

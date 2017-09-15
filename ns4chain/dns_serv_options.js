@@ -6,10 +6,11 @@
 */
 
 module.exports = {
-    DEBUG: 0,                   //0: off; 1: only to logfile; 2: only to console; 3: to logfile and console
-    listen: '127.0.0.1',	//default: listen on IP (can be changed with startup options)
-    port: '5353',		//default: listen on port (can be changed with startup options)
-    ttl: 60,			//default: set this TTL in DNS reply (can be changed with startup options)
+    DEBUG: 0,                   	//0: off; 1: only to logfile; 2: only to console; 3: to logfile and console
+    listen: '127.0.0.1',		//default: listen on IP (can be changed with startup options)
+    port: '5353',			//default: listen on port (can be changed with startup options)
+    ttl: 60,				//default: set this TTL in DNS reply (can be changed with startup options)
+    dnsName: 'ThisDnsFQDNname',		//FQDN name for this DNS server
     logDir: 'logs',
     rpc: {
 	host: 'localhost',
@@ -20,7 +21,7 @@ module.exports = {
     oldDNS: {
 	host: '8.8.8.8',
 	port: 53,
-	timeout: 3000,
+	timeout: 1000,
     }
     recursion: {
 	enabled: false,

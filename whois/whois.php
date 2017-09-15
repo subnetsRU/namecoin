@@ -29,7 +29,7 @@
  SUCH DAMAGE.
 */
 
-define( 'whoisVersion', '0.1.3' );
+define( 'whoisVersion', '0.1.4' );
 
 init();
 
@@ -82,6 +82,18 @@ if( isset( $tmp ) ){
 		    if ($value && is_array($value)){
 			if (isset($value['email'])){
 			    print_info( $value['email'], 'email' );
+			}
+			if (isset($value['a'])){
+			    print_info( $value['a'], 'admin-c' );
+			}
+			if (isset($value['t'])){
+			    print_info( $value['t'], 'tech-c' );
+			}
+			if (isset($value['r'])){
+			    print_info( $value['r'], 'registrant' );
+			}
+			if (isset($value['rr'])){
+			    print_info( $value['rr'], 'sponsoring registrar' );
 			}
 			if (isset($value['info'])){
 			    print_info( $value['info'], 'info' );

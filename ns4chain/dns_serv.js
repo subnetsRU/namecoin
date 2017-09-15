@@ -34,7 +34,7 @@ dnsSource = require('native-dns');		//https://github.com/tjfontaine/node-dns
 inSubnet = require('insubnet');			//https://www.npmjs.com/package/insubnet
 
 config = require('./dns_serv_options');
-config.version = '0.6.2';
+config.version = '0.6.3';
 sys = require('./dns_func');
 rpc = require('./rpc_client');
 ns4chain = require('./ns4chain');
@@ -117,8 +117,6 @@ dns.on('request', function (request, response) {
 	    //for rcode see node_modules/native-dns-packet/consts.js -> NAME_TO_RCODE
 	    if (!(/\.bit/.test(domain))){
 		error = 'REFUSED';
-	    }else if (!(/^(A|AAAA|TXT|ANY)$/.test(type))){
-		error = 'NOTIMP';
 	    }
 	}
 
@@ -151,6 +149,10 @@ dns.on('request', function (request, response) {
 		}
 	    }
 	}else{
+	    if (!(/^(A|AAAA|TXT|ANY|MX)$/.test(type))){
+		error = 'NOTIMP';
+	    }
+
 	    if (sys.is_null(error)){
 		var tmpName = domain.split('.');
 		var name = tmpName[0];
