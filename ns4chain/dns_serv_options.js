@@ -10,7 +10,7 @@ module.exports = {
     listen: '127.0.0.1',		//default: listen on IP (can be changed with startup options)
     port: '5353',			//default: listen on port (can be changed with startup options)
     ttl: 60,				//default: set this TTL in DNS reply (can be changed with startup options)
-    dnsName: 'ThisDnsFQDNname',		//FQDN name for this DNS server
+    dnsName: 'dns.bitname.ru',		//FQDN name for this DNS server
     logDir: 'logs',
     rpc: {
 	host: 'localhost',

@@ -34,7 +34,7 @@ dnsSource = require('native-dns');		//https://github.com/tjfontaine/node-dns
 inSubnet = require('insubnet');			//https://www.npmjs.com/package/insubnet
 
 config = require('./dns_serv_options');
-config.version = '0.6.3';
+config.version = '0.6.4';
 sys = require('./dns_func');
 rpc = require('./rpc_client');
 ns4chain = require('./ns4chain');
@@ -149,7 +149,7 @@ dns.on('request', function (request, response) {
 		}
 	    }
 	}else{
-	    if (!(/^(A|AAAA|TXT|ANY|MX)$/.test(type))){
+	    if (!(/^(A|AAAA|TXT|ANY|MX|SOA|CNAME)$/.test(type))){
 		error = 'NOTIMP';
 	    }
 
