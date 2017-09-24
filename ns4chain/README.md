@@ -1,10 +1,14 @@
 DNS server on NodeJS for .bit domains
 =================
 
-Installation
-------------
+Install instruction
+--------------------
 
 ```sh
+# mkdir /home/dot-bit
+# cd /home/dot-bit
+# git clone https://github.com/subnetsRU/namecoin.git
+# cd /home/dot-bit/namecoin/ns4chain
 # npm install native-dns
 # npm install json-rpc2
 # npm install fs
@@ -28,9 +32,11 @@ Note: Startup options override configuration options.
 
 Examples:
 ```sh
-# node /path/to/dns_serv.js -l 127.0.0.1 -p 53 -d cli -t 300
-# node /path/to/dns_serv.js --listen 127.0.0.1 --port 53 --debug cli --ttl 300
+# node /home/dot-bit/namecoin/ns4chain/dns_serv.js -l 127.0.0.1 -p 53 -d cli -t 300
+OR
+# node /home/dot-bit/namecoin/ns4chain/dns_serv.js --listen 127.0.0.1 --port 53 --debug cli --ttl 300
 ```
 
-### WARNING: 
-**Project in development right now, new versions coming soon**
+Update instruction
+--------------------
+Just replace all files exept dns_serv_options.js. Compare differences in your dns_serv_options.js.

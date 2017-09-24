@@ -34,7 +34,7 @@ dnsSource = require('native-dns');		//https://github.com/tjfontaine/node-dns
 inSubnet = require('insubnet');			//https://www.npmjs.com/package/insubnet
 
 config = require('./dns_serv_options');
-config.version = '0.6.4';
+config.version = '0.7.0';
 sys = require('./dns_func');
 rpc = require('./rpc_client');
 ns4chain = require('./ns4chain');
@@ -120,54 +120,75 @@ dns.on('request', function (request, response) {
 	    }
 	}
 
-	if (!(/\.bit/.test(domain))){
-	    recursion = true;
-	    if (!(/^([a-z0-9]+\.)?[a-z0-9][a-z0-9-]*\.[a-z]{2,10}$/i.test(domain))){
-		error = 'NOTFOUND';
-	    }
-	    if (sys.is_null(error) && !sys.is_null(config.recursion.enabled)){
-		if (config.recursion.allow != undefined && typeof config.recursion.allow == 'object'){
-		    if (config.recursion.allow.length == 0){
-			allowRecursion = true;
-		    }else{
-			for (var index in config.recursion.allow){
-			    if (!sys.is_null(config.recursion.allow[index])){
-				if (!sys.is_null(inSubnet.Auto(request.address.address,config.recursion.allow[index]))){
-				    allowRecursion = true;
-				    break;
+	if (sys.is_null(error)){
+	    var re;
+	    if (!(/\.bit/.test(domain))){
+		recursion = true;
+
+		if ((/^SRV$/.test(type))){
+		    re = new RegExp('^(_[a-z]+\.){2}[a-z0-9][a-z0-9-]*\.[a-z]{2,10}$','i');
+		}else{
+		    re = new RegExp('^([a-z0-9]+\.)?[a-z0-9][a-z0-9-]*\.[a-z]{2,10}$','i');
+		}
+		if (sys.is_null(domain.match(re))){
+		    error = 'NOTFOUND';
+		}
+
+		if (sys.is_null(error) && !sys.is_null(config.recursion.enabled)){
+		    if (config.recursion.allow != undefined && typeof config.recursion.allow == 'object'){
+			if (config.recursion.allow.length == 0){
+			    allowRecursion = true;
+			}else{
+			    for (var index in config.recursion.allow){
+				if (!sys.is_null(config.recursion.allow[index])){
+				    if (!sys.is_null(inSubnet.Auto(request.address.address,config.recursion.allow[index]))){
+					allowRecursion = true;
+					break;
+				    }
 				}
 			    }
 			}
-		    }
-		    if (sys.is_null(allowRecursion)){
-			sys.console({level: 'info', text: sprintf('recursion not allowed for %s',request.address.address)});
+			if (sys.is_null(allowRecursion)){
+			    sys.console({level: 'info', text: sprintf('recursion not allowed for %s',request.address.address)});
+			    error = 'REFUSED';
+			}
+		    }else{
+			sys.console({level: 'error', text: 'recursion enabled, allow list is set but not valid'});
 			error = 'REFUSED';
 		    }
-		}else{
-		    sys.console({level: 'error', text: 'recursion enabled, allow list is set but not valid'});
-		    error = 'REFUSED';
 		}
-	    }
-	}else{
-	    if (!(/^(A|AAAA|TXT|ANY|MX|SOA|CNAME)$/.test(type))){
-		error = 'NOTIMP';
-	    }
-
-	    if (sys.is_null(error)){
-		var tmpName = domain.split('.');
-		var name = tmpName[0];
-		var zone = tmpName[tmpName.length-1];
-		var subDomain = null;
-		if (tmpName.length > 2){
-		    name = tmpName[tmpName.length-2];
-		    re = new RegExp('(.*)\.' + name + '\.' + tmpName[tmpName.length-1] + '$');
-		    subMatch = domain.match(re);
-		    if (!sys.is_null(subMatch[1])){
-			subDomain = subMatch[1];
+	    }else{
+		if (!(/^(A|AAAA|TXT|ANY|MX|SOA|CNAME|SRV|NS)$/.test(type))){
+		    error = 'NOTIMP';
+		}else{
+		    if ((/^SRV$/.test(type)) && (!(/^_[a-z]+\._(tcp|udp)\./.test(domain)))){
+			error = 'NOTFOUND';
+		    }
+		}
+		if (sys.is_null(error)){
+		    var tmpName = domain.split('.');
+		    var name = tmpName[0];
+		    var zone = tmpName[tmpName.length-1];
+		    var subDomain = null;
+		    var service = null;
+		    if (tmpName.length > 2){
+			name = tmpName[tmpName.length-2];
+			var re = new RegExp('(.*)\.' + name + '\.' + tmpName[tmpName.length-1] + '$');
+			subMatch = domain.match(re);
+			if (!sys.is_null(subMatch[1])){
+			    if ((/^SRV$/.test(type))){
+				tmpName = subMatch[1].split('.');
+				service = tmpName.splice(0,2).join('.');
+				subDomain = tmpName.length > 0 ? tmpName.join('.') : null;
+				domain = (sys.is_null(subDomain) ? '' : subDomain + '.' ) + name + '.' + zone;
+			    }else{
+				subDomain = subMatch[1];
+			    }
+			}
 		    }
 		}
 		//https://wiki.namecoin.info/index.php?title=Domain_Name_Specification#Regular_Expression
-		if ((/\.bit/.test(domain)) && !(/^[a-z]([a-z0-9-]{0,62}[a-z0-9])?$/.test(name))){
+		if (!(/^[a-z]([a-z0-9-]{0,62}[a-z0-9])?$/.test(name))){
 		    error = 'NOTFOUND';
 		}
 	    }
@@ -187,6 +208,7 @@ dns.on('request', function (request, response) {
 		    name: name,
 		    zone: zone,
 		    subDomain: subDomain,
+		    service: service,
 		    class: (!sys.is_null(request.question[0].class) ? request.question[0].class : 1),
 		});
 	    }else{
