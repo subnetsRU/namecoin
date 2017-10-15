@@ -29,7 +29,7 @@
  SUCH DAMAGE.
 */
 
-define( 'whoisVersion', '0.1.4' );
+define( 'whoisVersion', '0.1.5' );
 
 init();
 
@@ -79,7 +79,8 @@ if( isset( $tmp ) ){
 		}
 		if( isset( $info['value'] ) ){
 		    $value = @json_decode(trim(preg_replace("/:\"\[/",":[",preg_replace("/\"\]\"/","\"]",$info['value']))),true,512);
-		    if ($value && is_array($value)){
+		    $json_last_error = json_last_error();
+		    if ($value && !$json_last_error && is_array($value)){
 			if (isset($value['email'])){
 			    print_info( $value['email'], 'email' );
 			}
@@ -108,6 +109,12 @@ if( isset( $tmp ) ){
 			    print_info( $value['ns'], 'nameserver' );
 			}
 		    }else{
+			if (preg_match("/^\{.*\}$/",$info['value'])){
+			    $info['value']="Error: Data decode failed";
+			    if ( DEBUG ){
+				$info['value'] .= sprintf(". Code %d (%s)",$json_last_error,json_last_error_msg());
+			    }
+			}
 			print_info( $info['value'], 'info' );
 		    }
 		}
