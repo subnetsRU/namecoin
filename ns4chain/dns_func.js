@@ -109,6 +109,50 @@ function IsJsonString(str) {
     }
  return true;
 }
+
+var antiddos = function( ){
+    if (!sys.is_null(config.antiddos)){
+	configFile = __dirname + '/' + config.antiddos;
+	if (is_null(configFile)){
+	    sys.console({level: 'warn', text: 'antiddos: file unknown: ' + configFile });
+	}else{
+	    fs.stat( configFile, function( err, stat ){
+		if (err){
+		    sys.console({level: 'error', text: 'antiddos: Can`t open file ' + configFile, obj: err });
+		}else{
+		    fs.readFile( configFile, 'utf8', function( err, data ){
+			if (err){
+			    sys.console({level: 'error', text: 'antiddos: Can`t open file ' + configFile, obj: err });
+			}else{
+			    antiddoslist = [];
+			    str = data.split('\n');
+			    for(var i = 0; i < str.length; i++){
+				if (!is_null(str[i].trim())){
+				    antiddoslist.push(str[i].trim());
+				}
+			    }
+			}
+		    });
+		}
+	    });
+	}
+    }else{
+	sys.console({level: 'warn', text: 'antiddos: file not set' });
+    }
+}
+
+var in_array = function(val,array) {
+    if (typeof array === 'object'){
+	for(var i = 0, l = array.length; i < l; i++){
+	    if(array[i] == val) {
+		return true;
+	    }
+	}
+    }else{
+	sys.console({level: 'error', text: 'in_array: param array is not an object ' + array });
+    }
+ return false;
+}
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 /*
     https://habrahabr.ru/post/217901/
@@ -122,3 +166,5 @@ module.exports.unixtime = unixtime;
 module.exports.ndate = ndate;
 module.exports.logg = logg;
 module.exports.IsJsonString = IsJsonString;
+module.exports.antiddos = antiddos;
+module.exports.in_array = in_array;

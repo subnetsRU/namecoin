@@ -26,7 +26,6 @@
  OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  SUCH DAMAGE.
 */
-
 fs = require('fs');                             //https://nodejs.org/api/fs.html
 util = require('util');                         //https://nodejs.org/api/util.html
 sprintf = require("sprintf-js").sprintf;        //https://www.npmjs.com/package/sprintf-js
@@ -34,12 +33,13 @@ dnsSource = require('native-dns');		//https://github.com/tjfontaine/node-dns
 inSubnet = require('insubnet');			//https://www.npmjs.com/package/insubnet
 
 config = require('./dns_serv_options');
-config.version = '0.7.0';
+config.version = '0.7.1';
 sys = require('./dns_func');
 rpc = require('./rpc_client');
 ns4chain = require('./ns4chain');
 
 zoneData = {};
+antiddoslist = [];
 var argv = process.argv.slice(2);
 
 while (argv[0] && argv[0][0] == '-') {
@@ -103,6 +103,11 @@ dns = dnsSource.createServer({ dgram_type: 'udp4' });
 dns.on('listening', function(){
     sys.console({level: 'info', text: sprintf('Starting DNS server v%s on %j',config.version,dns.address())});
     sys.console({level: 'debug', text: sprintf('Configuration %j',config)});
+    sys.antiddos();
+    setInterval(sys.antiddos, (sys.is_null(config.antiddosRenew) ? 900000 : config.antiddosRenew * 1000) );
+    setTimeout(function(){
+	sys.console({level: 'debug', text: sprintf('antiddos list %j',antiddoslist)});
+    },100);
 });
 
 dns.on('request', function (request, response) {
@@ -115,9 +120,14 @@ dns.on('request', function (request, response) {
 
 	if (sys.is_null(config.recursion) || sys.is_null(config.recursion.enabled)){
 	    //for rcode see node_modules/native-dns-packet/consts.js -> NAME_TO_RCODE
-	    if (!(/\.bit/.test(domain))){
+	    if (!(/\.bit$/.test(domain))){
 		error = 'REFUSED';
 	    }
+	}
+
+	if (!sys.is_null(sys.in_array(domain,antiddoslist)) && !sys.is_null(antiddoslist.length)){
+	    sys.console({level: 'debug', text: 'Domain ' + domain + ' is in ddos list'});
+	    error = 'REFUSED';
 	}
 
 	if (sys.is_null(error)){

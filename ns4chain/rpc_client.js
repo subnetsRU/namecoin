@@ -31,20 +31,25 @@ rpc.lookup = function ( obj ){
 
     if (sys.is_null(res.error)){
 	    rpcClient.call('name_show', ['d/'+obj.name], function(err, chainData) {
-		sys.console({level: 'debug', text: 'rpc.lookup->rpcClient.call', obj: chainData});
+		sys.console({level: 'debug', text: obj.domain + ': rpc.lookup->rpcClient.call', obj: chainData});
 		sys.console({level: 'debug', text: sprintf('rpc.lookup error: %s',err)});
 		if (sys.is_null(err)){
 		    res.chainData = chainData;
 		}else{
 		    //Error: "500"{"result":null,"error":{"code":-4,"message":"failed to read from name DB"},"id":1}
 		    res.error = 'rpc.lookup: ' + err;
-		    var regexp = /^Error:\s"\d+"(.*)/gi;
+		    var regexp = /^Error:\s"(\d+)"(.*)/gi;
 		    match = regexp.exec(err);
-		    if (!sys.is_null(match[1])){
-			var e = JSON.parse(match[1]);
-			res.error = 'rpc.lookup: code '+e.error.code+': '+e.error.message;
-			if (e.error.code == '-4'){
-			    res.errorCode = 'NOTFOUND';
+		    if (!sys.is_null(match[2])){
+			try {
+			    var e = JSON.parse(match[2]);
+			    res.error = 'rpc.lookup: code '+e.error.code+': '+e.error.message;
+			    if (e.error.code == '-4'){
+				res.errorCode = 'NOTFOUND';
+			    }
+			}
+			catch( e ){
+			    console.log('rpc.lookup: code '+match[1]+': '+match[2]);
 			}
 		    }
 		}

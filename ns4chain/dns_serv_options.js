@@ -28,4 +28,6 @@ module.exports = {
 	allow: ['10.0.0.0/8','192.168.0.0/16','172.16.0.0/12'],
     },
     maxalias: 16,		//max aliases to follow
+    antiddos: 'antiddos.txt',
+    antiddosRenew: 900,		//seconds to reread antiddos file, default is 900 (every 15 minutes)
 };
