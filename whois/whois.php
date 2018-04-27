@@ -29,7 +29,7 @@
  SUCH DAMAGE.
 */
 
-define( 'whoisVersion', '0.1.5' );
+define( 'whoisVersion', '0.1.6' );
 
 init();
 
@@ -62,7 +62,7 @@ if( isset( $tmp ) ){
 	$domain = $tmp[count( $tmp ) - 2];
     }
     if( preg_match( '/^[a-z]([a-z0-9-]{0,62}[a-z0-9])?$/', $domain ) ){
-	print "% Information related to $domain.bit\n\n";
+	printf("%% Information related to %s.bit\n\n",$domain);
 	$data = rpc_request( array('method'=> "name_show", 'domain'=> $domain) );
 	if( !isset($data['error']) ){
 	    if( isset( $data['result'] ) ){
@@ -71,12 +71,23 @@ if( isset( $tmp ) ){
 		if( isset( $info['name'] ) ){
 		    print_info( $info['name'], 'name' );
 		}
+
+		$status = "unknown";
 		if( isset( $info['expired'] ) ){
-		    print_info( ( $info['expired'] === true ? "exprired" : "registered" ), 'status' );
+		    if ($info['expired'] === true || (int)$info['expired'] == 1){
+			$status = "expired";
+		    }else{
+			$status = "registered";
+		    }
 		}
 		if( isset( $info['expires_in'] ) ){
 		    print_info( sprintf( "%s blocks",$info['expires_in'] ), 'expires in' );
+		    if ((int)$info['expires_in'] < 0 && $status == "registered"){
+			$status = "expired";
+		    }
 		}
+		print_info( $status, 'status' );
+
 		if( isset( $info['value'] ) ){
 		    $value = @json_decode(trim(preg_replace("/:\"\[/",":[",preg_replace("/\"\]\"/","\"]",$info['value']))),true,512);
 		    $json_last_error = json_last_error();
@@ -125,7 +136,7 @@ if( isset( $tmp ) ){
 		    print_info( $info['height'], 'height' );
 		}
 
-		if( isset( $info['txid'] ) ){
+		if( isset( $info['txid'] ) && $status == "registered"){
 		    print_info( $info['txid'], 'txid' );
 		    unset( $data );
 		    $data = rpc_request( array('method'=> "getrawtransaction", 'txid'=> $info['txid']) );
