@@ -1,5 +1,5 @@
 Whois service for .bit domains
 
-Not supported from 30.04.2018.
+This version not supported from 30.04.2018.
 
-Moved to [github: subnetsRU/blockchain](https://github.com/subnetsRU/blockchain/tree/master/whois)
+Whois moved to [github: subnetsRU/blockchain repository](https://github.com/subnetsRU/blockchain/tree/master/whois). See new versions there.
