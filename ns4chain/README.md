@@ -39,4 +39,5 @@ OR
 
 Update instruction
 --------------------
-Just replace all files exept dns_serv_options.js. Compare differences in your dns_serv_options.js.
+* replace all files exept dns_serv_options.js
+* compare differences in your dns_serv_options.js

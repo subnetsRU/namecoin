@@ -2,7 +2,7 @@
 /*
     RPC client for ns4chain :: https://github.com/subnetsRU/namecoin
 
-    (c) 2017 SUBNETS.RU for bitname.ru project (Moscow, Russia)
+    (c) 2017-2018 SUBNETS.RU for bitname.ru project (Moscow, Russia)
     Authors: Nikolaev Dmitry <virus@subnets.ru>, Panfilov Alexey <lehis@subnets.ru>
 */
 
@@ -18,21 +18,19 @@ rpc.lookup = function ( obj ){
     sys.console({ level: 'debug', text: 'rpc.lookup start', obj: obj });
     if( typeof( obj.callback ) !== 'function'){
 	res.error = 'rpc.lookup: Callback function not set';
-	//obj.callback = function(){ sys.console({level: 'error', text: res.error, obj: obj}); };
 	obj.callback = function(){ sys.console({level: 'error', text: res.error}); };
 	obj.response.header.rcode = dnsSource.consts.NAME_TO_RCODE.SERVFAIL;
 	obj.response.send();
     }
 
     if (sys.is_null(obj.name)){
-	res.error = 'domain name is not set';
+	res.error = 'rpc.lookup: domain name is not set';
 	res.errorCode = 'FORMERR';	//see node_modules/native-dns-packet/consts.js NAME_TO_RCODE
     }
 
     if (sys.is_null(res.error)){
 	    rpcClient.call('name_show', ['d/'+obj.name], function(err, chainData) {
 		sys.console({level: 'debug', text: obj.domain + ': rpc.lookup->rpcClient.call', obj: chainData});
-		sys.console({level: 'debug', text: sprintf('rpc.lookup error: %s',err)});
 		if (sys.is_null(err)){
 		    res.chainData = chainData;
 		}else{
@@ -49,7 +47,7 @@ rpc.lookup = function ( obj ){
 			    }
 			}
 			catch( e ){
-			    console.log('rpc.lookup: code '+match[1]+': '+match[2]);
+			    sys.console({level: 'error', text: res.error});
 			}
 		    }
 		}

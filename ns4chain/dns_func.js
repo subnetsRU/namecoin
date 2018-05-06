@@ -1,7 +1,7 @@
 /*
     ns4chain core functions :: https://github.com/subnetsRU/namecoin
 
-    (c) 2017 SUBNETS.RU for bitname.ru project (Moscow, Russia)
+    (c) 2017-2018 SUBNETS.RU for bitname.ru project (Moscow, Russia)
     Authors: Nikolaev Dmitry <virus@subnets.ru>, Panfilov Alexey <lehis@subnets.ru>
 */
 
@@ -153,6 +153,58 @@ var in_array = function(val,array) {
     }
  return false;
 }
+
+var equal_objects = function( x, y ) {
+  if ( x === y ) return true;
+    // if both x and y are null or undefined and exactly the same
+
+  if ( ! ( x instanceof Object ) || ! ( y instanceof Object ) ) return false;
+    // if they are not strictly equal, they both need to be Objects
+
+  if ( x.constructor !== y.constructor ) return false;
+    // they must have the exact same prototype chain, the closest we can do is
+    // test there constructor.
+
+  for ( var p in x ) {
+    if ( ! x.hasOwnProperty( p ) ) continue;
+      // other properties were tested using x.constructor === y.constructor
+
+    if ( ! y.hasOwnProperty( p ) ) return false;
+      // allows to compare x[ p ] and y[ p ] when set to undefined
+
+    if ( x[ p ] === y[ p ] ) continue;
+      // if they have the same strict value or identity then they are equal
+
+    if ( typeof( x[ p ] ) !== "object" ) return false;
+      // Numbers, Strings, Functions, Booleans must be strictly equal
+
+    if ( ! Object.equals( x[ p ],  y[ p ] ) ) return false;
+      // Objects and Arrays must be tested recursively
+  }
+
+  for ( p in y ) {
+    if ( y.hasOwnProperty( p ) && ! x.hasOwnProperty( p ) ) return false;
+      // allows x[ p ] to be set to undefined
+  }
+  return true;
+}
+
+var ip_vs_net = function( ip, net){
+    if (!is_null(ip) && !is_null(net)){
+	if (typeof net == 'string'){
+	    net = [ net ];
+	}
+
+	for (var index in net){
+	    if (!sys.is_null(net[index])){
+		if (!sys.is_null(inSubnet.Auto(ip,net[index]))){
+		    return true;
+		}
+	    }
+	}
+    }
+ return false;
+}
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 /*
     https://habrahabr.ru/post/217901/
@@ -168,3 +220,5 @@ module.exports.logg = logg;
 module.exports.IsJsonString = IsJsonString;
 module.exports.antiddos = antiddos;
 module.exports.in_array = in_array;
+module.exports.equal_objects = equal_objects;
+module.exports.ip_vs_net = ip_vs_net;

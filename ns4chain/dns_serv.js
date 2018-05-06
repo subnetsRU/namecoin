@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /*
-    ns4chain :: https://github.com/subnetsRU/namecoin
+    ns4chain server :: https://github.com/subnetsRU/namecoin
 
-    (c) 2017 SUBNETS.RU for bitname.ru project (Moscow, Russia)
+    (c) 2017-2018 SUBNETS.RU for bitname.ru project (Moscow, Russia)
     Authors: Nikolaev Dmitry <virus@subnets.ru>, Panfilov Alexey <lehis@subnets.ru>
 
  This program is free software; you can redistribute it and/or modify
@@ -26,6 +26,7 @@
  OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  SUCH DAMAGE.
 */
+
 fs = require('fs');                             //https://nodejs.org/api/fs.html
 util = require('util');                         //https://nodejs.org/api/util.html
 sprintf = require("sprintf-js").sprintf;        //https://www.npmjs.com/package/sprintf-js
@@ -33,7 +34,7 @@ dnsSource = require('native-dns');		//https://github.com/tjfontaine/node-dns
 inSubnet = require('insubnet');			//https://www.npmjs.com/package/insubnet
 
 config = require('./dns_serv_options');
-config.version = '0.7.1';
+config.version = '0.8.0';
 sys = require('./dns_func');
 rpc = require('./rpc_client');
 ns4chain = require('./ns4chain');
@@ -132,7 +133,7 @@ dns.on('request', function (request, response) {
 
 	if (sys.is_null(error)){
 	    var re;
-	    if (!(/\.bit/.test(domain))){
+	    if (!(/\.bit$/.test(domain))){
 		recursion = true;
 
 		if ((/^SRV$/.test(type))){
@@ -149,15 +150,11 @@ dns.on('request', function (request, response) {
 			if (config.recursion.allow.length == 0){
 			    allowRecursion = true;
 			}else{
-			    for (var index in config.recursion.allow){
-				if (!sys.is_null(config.recursion.allow[index])){
-				    if (!sys.is_null(inSubnet.Auto(request.address.address,config.recursion.allow[index]))){
-					allowRecursion = true;
-					break;
-				    }
-				}
+			    if (!sys.is_null(sys.ip_vs_net(request.address.address,config.recursion.allow))){
+				allowRecursion = true;
 			    }
 			}
+
 			if (sys.is_null(allowRecursion)){
 			    sys.console({level: 'info', text: sprintf('recursion not allowed for %s',request.address.address)});
 			    error = 'REFUSED';
@@ -218,6 +215,7 @@ dns.on('request', function (request, response) {
 		    name: name,
 		    zone: zone,
 		    subDomain: subDomain,
+		    sld: name + '.' + zone,
 		    service: service,
 		    class: (!sys.is_null(request.question[0].class) ? request.question[0].class : 1),
 		});

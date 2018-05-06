@@ -1,7 +1,7 @@
 /*
     ns4chain configuration file :: https://github.com/subnetsRU/namecoin
 
-    (c) 2017 SUBNETS.RU for bitname.ru project (Moscow, Russia)
+    (c) 2017-2018 SUBNETS.RU for bitname.ru project (Moscow, Russia)
     Authors: Nikolaev Dmitry <virus@subnets.ru>, Panfilov Alexey <lehis@subnets.ru>
 */
 
@@ -10,13 +10,13 @@ module.exports = {
     listen: '127.0.0.1',		//default: listen on IP (can be changed with startup options)
     port: '5353',			//default: listen on port (can be changed with startup options)
     ttl: 60,				//default: set this TTL in DNS reply (can be changed with startup options)
-    dnsName: 'dns.bitname.ru',		//FQDN name for this DNS server
+    dnsName: 'yourdnsname.example.ru',	//FQDN for this DNS server
     logDir: 'logs',
     rpc: {
-	host: 'localhost',
+	host: '127.0.0.1',
 	port: 8336,
-	user: 'username',
-	pass: 'password'
+	user: 'rpc_username_from_namecon.conf',
+	pass: 'rpc_password_from_namecon.conf',
     },
     oldDNS: {
 	host: '8.8.8.8',
