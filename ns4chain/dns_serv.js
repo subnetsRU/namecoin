@@ -34,10 +34,8 @@ dnsSource = require('native-dns');		//https://github.com/tjfontaine/node-dns
 inSubnet = require('insubnet');			//https://www.npmjs.com/package/insubnet
 
 config = require('./dns_serv_options');
-config.version = '0.8.0';
+config.version = '0.8.1';
 sys = require('./dns_func');
-rpc = require('./rpc_client');
-ns4chain = require('./ns4chain');
 
 zoneData = {};
 antiddoslist = [];
@@ -95,11 +93,13 @@ while (argv[0] && argv[0][0] == '-') {
 	    break;
 	default:
 	    sys.console({level: 'error', text: sprintf('unknown option [%s], for help run:\n\tnode %s -h',argv[0],process.mainModule.filename)});
-	    process.exit(1);
+	    sys.exit(1);
     }
 }
 
 dns = dnsSource.createServer({ dgram_type: 'udp4' });
+rpc = require('./rpc_client');
+ns4chain = require('./ns4chain');
 
 dns.on('listening', function(){
     sys.console({level: 'info', text: sprintf('Starting DNS server v%s on %j',config.version,dns.address())});
@@ -248,5 +248,5 @@ dns.on('socketError', function (err) {
 });
 dns.serve(config.port,config.listen);
 
-process.on('SIGINT', ns4chain.onExit);
-process.on('SIGTERM', ns4chain.onExit);
+process.on('SIGINT', sys.exit);
+process.on('SIGTERM', sys.exit);

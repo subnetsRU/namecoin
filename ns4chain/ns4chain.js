@@ -40,13 +40,7 @@ ns4chain.dns_serv_help = function(){
     helpText += '\t-t, --ttl <NUMBER>                      Set this TTL in reply;\n'
     helpText += '\t-r, --recursion                         Enable recursive queries;\n'
     sys.console({level: 'info', text: helpText});
-    process.exit(0);
-}
-
-ns4chain.onExit = function() {
-    sys.console({level: 'info', text: sprintf('Stop DNS server %j',dns.address())});
-    dns.close();
-    process.exit(0);
+    sys.exit(0);
 }
 
 ns4chain.recursive = function( obj ){
@@ -219,10 +213,17 @@ ns4chain.request = function( obj ){
 			}
 		}
 	    };
+	    obj.ns4chainResponse = request.ns4chainResponse;
 	    rpc.lookup( request );
     }
     catch(e){
-	sys.console({level: 'error', text: 'ns4chain.request failed', obj: obj});
+	sys.console({level: 'error', text: 'ns4chain.request failed', obj: e});
+	sys.console({level: 'error', text: 'obj', obj: obj});
+	obj.error = 'rpc.lookup: start of rpcClient failed';
+	obj.errorCode = 'SERVFAIL';
+	var ns4chainResponse = obj.ns4chainResponse;
+	delete( obj.ns4chainResponse );
+	ns4chainResponse( obj );
     }
 }
 

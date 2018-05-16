@@ -41,3 +41,10 @@ Update instruction
 --------------------
 * replace all files exept dns_serv_options.js
 * compare differences in your dns_serv_options.js
+
+Repository moved 
+--------------------
+Now it is at [github: subnetsRU/blockchain repository](https://github.com/subnetsRU/blockchain/tree/master/ns4chain). See new versions there.
+
+This version not supported from 16.05.2018.
+

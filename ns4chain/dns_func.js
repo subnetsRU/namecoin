@@ -205,6 +205,18 @@ var ip_vs_net = function( ip, net){
     }
  return false;
 }
+
+var exit = function( code ){
+    if (is_null(code)){
+	code = 0;
+    }
+    sys.console({level: 'info', text: 'Exiting...'});
+    if (typeof dns === 'object'){
+	sys.console({level: 'debug', text: sprintf('Stoping DNS server %j',dns.address())});
+	dns.close();
+    }
+    process.exit( code );
+}
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 /*
     https://habrahabr.ru/post/217901/
@@ -222,3 +234,4 @@ module.exports.antiddos = antiddos;
 module.exports.in_array = in_array;
 module.exports.equal_objects = equal_objects;
 module.exports.ip_vs_net = ip_vs_net;
+module.exports.exit = exit;
